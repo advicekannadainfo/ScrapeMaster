@@ -63,6 +63,13 @@ export function isAccessory(title: string, query: string) {
   return ACCESSORY.test(title) && !ACCESSORY.test(query);
 }
 
+/** Detects if a title is a bundle/combo. */
+function hasBundleKeywords(title: string): boolean {
+  const lower = title.toLowerCase();
+  // "with", "free", "gift" can also indicate bundles
+  return /\b(bundle|combo|pack of|set of|with|free|gift|plus)\b|\+/i.test(lower);
+}
+
 /**
  * Similarity between two product titles in [0, 1]. Measures how much of the
  * shorter title's identity (brand, model, specs) appears in the longer one,
@@ -70,6 +77,14 @@ export function isAccessory(title: string, query: string) {
  * Model numbers and capacities from either side that conflict are penalised.
  */
 export function titleSimilarity(source: string, candidate: string) {
+  // --- NEW FIX: Reject if one is a bundle and the other isn't ---
+  const sourceHasBundle = hasBundleKeywords(source);
+  const candidateHasBundle = hasBundleKeywords(candidate);
+  if (sourceHasBundle !== candidateHasBundle) {
+    return 0; // One is a bundle, the other is a single product. Do not match.
+  }
+  // -------------------------------------------------------------
+
   const a = tokenize(source);
   const b = tokenize(candidate);
   if (!a.size || !b.size) return 0;
