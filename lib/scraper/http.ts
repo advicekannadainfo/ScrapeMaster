@@ -58,7 +58,7 @@ async function fetchViaScrapingDog(url: string): Promise<string> {
   endpoint.searchParams.set('country', 'in');   
 
   try {
-    const response = await axios.get(endpoint.toString(), { timeout: 90_000, maxContentLength: 10 * 1024 * 1024, responseType: 'text' });
+    const response = await axios.get(endpoint.toString(), { timeout: 9500, maxContentLength: 10 * 1024 * 1024, responseType: 'text' });
     return response.data;
   } catch (error) {
     if (axios.isAxiosError(error)) {
