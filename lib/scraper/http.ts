@@ -46,17 +46,12 @@ export async function assertPublicURL(input: string | URL) {
     throw new ScrapeError('Unsupported port', 'disallowed');
   if (url.username || url.password)
     throw new ScrapeError('Links with credentials are not supported', 'disallowed');
-
   const host = url.hostname.replace(/^\[|\]$/g, '');
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal')) {
     throw new ScrapeError('That address is not allowed', 'disallowed');
   }
-
-  const addresses = isIP(host)
-    ? [{ address: host }]
-    : await lookup(host, { all: true }).catch(() => []);
-  if (!addresses.length)
-    throw new ScrapeError('Could not resolve that website', 'not-found');
+  const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true }).catch(() => []);
+  if (!addresses.length) throw new ScrapeError('Could not resolve that website', 'not-found');
   if (addresses.some(({ address }) => isPrivateAddress(address)))
     throw new ScrapeError('That address is not allowed', 'disallowed');
   return url;
@@ -80,13 +75,49 @@ const REQUEST_CONFIG: AxiosRequestConfig = {
   },
 };
 
+/** Fetch a page via ScrapingDog API (handles proxies, rendering, and CAPTCHA). */
+async function fetchViaScrapingDog(url: string): Promise<string> {
+  const apiKey = process.env.SCRAPINGDOG_API_KEY;
+  if (!apiKey) throw new ScrapeError('ScrapingDog API key is missing.', 'unsupported');
+
+  const endpoint = new URL('https://api.scrapingdog.com/scrape');
+  endpoint.searchParams.set('api_key', apiKey);
+  endpoint.searchParams.set('url', url);
+  endpoint.searchParams.set('render_js', 'true'); // Important for Flipkart, Myntra, etc.
+
+  try {
+    const response = await axios.get(endpoint.toString(), {
+      timeout: 45_000, // ScrapingDog may take longer for JS rendering
+      maxContentLength: 10 * 1024 * 1024,
+      responseType: 'text',
+    });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status ?? 0;
+      const kind = kindForStatus(status);
+      throw new ScrapeError(`ScrapingDog failed (HTTP ${status})`, kind);
+    }
+    throw new ScrapeError('ScrapingDog request failed', 'unsupported');
+  }
+}
+
 /** Fetch a page (or an official API's response) as text. */
 export async function fetchHtml(url: string, headers?: Record<string, string>) {
   await assertPublicURL(url);
+
+  // If ScrapingDog key is set and no custom headers are forced (official APIs),
+  // use ScrapingDog to bypass blocks.
+  if (process.env.SCRAPINGDOG_API_KEY && !headers) {
+    return fetchViaScrapingDog(url);
+  }
+
+  // Fallback to direct request (used for official APIs that already have headers)
   await assertRobotsAllowed(url);
   await throttle(url);
+
   try {
-    const response = await axios.get<string>(
+    const response = await axios.get(
       url,
       headers
         ? { ...REQUEST_CONFIG, headers: { ...REQUEST_CONFIG.headers, ...headers } }
@@ -95,15 +126,10 @@ export async function fetchHtml(url: string, headers?: Record<string, string>) {
     return response.data;
   } catch (error) {
     if (error instanceof ScrapeError) throw error;
-    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-    const timedOut = axios.isAxiosError(error) && error.code === 'ECONNABORTED';
-    throw new ScrapeError(
-      status === 403 || status === 503
-        ? 'The store blocked the request. Try again shortly.'
-        : timedOut
-          ? 'The store took too long to respond.'
-          : `Could not load the page${status ? ` (HTTP ${status})` : ''}`,
-      timedOut ? 'timeout' : status === 503 ? 'blocked' : kindForStatus(status),
-    );
+    const status = axios.isAxiosError(error) ? error.response?.status ?? 0 : 0;
+    if (status === 429 || status === 403) {
+      throw new ScrapeError('This store blocks plain HTTP. Use ScrapingDog or a browser.', 'rate-limited');
+    }
+    throw new ScrapeError('Could not load the page', kindForStatus(status));
   }
 }
