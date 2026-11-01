@@ -94,6 +94,33 @@ npm run dev                  # http://localhost:3000
 
 Search for a product on the home page to start tracking. Run `npm run feeds:refresh` to fill deals, trending, sale banners and store health.
 
+For rendered product pages through ScrapingDog, set `SCRAPINGDOG_API_KEY`
+in `.env.local`, Vercel environment variables, and the GitHub Actions repository
+secret of the same name. With this key set, Flipkart product pages use the
+General Scraper instead of Browserless/Chromium. Without it, Flipkart continues
+to require a configured browser. Requests still follow robots.txt
+and per-host throttling; provider 429 responses use the existing bounded retries
+and circuit breaker. Rendering can take up to 60 seconds per attempt, so hosting
+request-duration limits still apply. The background refresh workflow is preferred
+for slow requests.
+
+Myntra product URLs ending in `/<productId>/buy` use the dedicated
+`https://api.scrapingdog.com/myntra/product` endpoint, passing `api_key` and `url`
+server-side. This route requires the key, disables redirects and automatic retries,
+retains URL/DNS validation, robots checks, throttling and circuit-breaker accounting,
+and never falls back to the General Scraper or a browser after failure.
+The supplied response contract is validated before use; product IDs must match.
+Only available sizes with positive selling prices and nonzero stock (when supplied)
+qualify. Different selling prices across available sizes require size selection
+and return an explicit error; a size-selection UI is not implemented yet.
+For equal prices, the first available size sorted by label supplies both price
+and MRP, and the selected label is included in the description. Missing size MRP
+defaults to selling price without inventing a discount. Missing prices or no
+available sizes return an error instead of saving a zero price. The old HTML
+parser remains available for offline use, but is not an automatic API fallback.
+The JSON test fixture is synthetic and based on the supplied documented shape,
+not a captured live API response. Myntra search is not implemented in this phase.
+
 ## Configuration
 
 | Variable                                                         | Purpose                                                 |

@@ -11,6 +11,13 @@ import { parseAmazonSearch } from '@/lib/scraper/stores/amazon';
 describe('titleSimilarity', () => {
   const source = 'Apple iPhone 15 (128 GB) - Black';
 
+  it('rejects explicit bundles while allowing ordinary product descriptors', () => {
+    expect(titleSimilarity(source, `${source} combo pack`)).toBe(0);
+    expect(
+      titleSimilarity('iPhone 15 Pro Plus', 'iPhone 15 Pro Plus with warranty'),
+    ).toBeGreaterThanOrEqual(MATCH_THRESHOLD);
+  });
+
   it('matches the same product across stores', () => {
     expect(
       titleSimilarity(source, 'Apple iPhone 15 (Black, 128 GB)'),

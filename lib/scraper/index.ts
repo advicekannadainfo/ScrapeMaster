@@ -13,5 +13,8 @@ export function normalizeProductURL(input: string) {
 /** Fetch and parse a product page from any supported store. */
 export async function scrapeProduct(url: string) {
   const adapter = resolveStore(new URL(url));
-  return loadAndParse(adapter, url, (html) => adapter.parse(html, url));
+  const parse = adapter.productAPI?.matches(new URL(url))
+    ? adapter.productAPI.parse
+    : adapter.parse;
+  return loadAndParse(adapter, url, (body) => parse(body, url));
 }

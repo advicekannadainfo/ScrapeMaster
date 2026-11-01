@@ -59,14 +59,14 @@ export function isAccessory(title: string, query: string) {
 
 function hasBundleKeywords(title: string): boolean {
   const lower = title.toLowerCase();
-  return /\b(bundle|combo|pack of|set of|with|free|gift|plus)\b|\+/i.test(lower);
+  return /\b(bundle|combo|pack of|set of)\b/i.test(lower);
 }
 
 export function titleSimilarity(source: string, candidate: string) {
   const sourceHasBundle = hasBundleKeywords(source);
   const candidateHasBundle = hasBundleKeywords(candidate);
   if (sourceHasBundle !== candidateHasBundle) {
-    return 0; 
+    return 0;
   }
 
   const a = tokenize(source);

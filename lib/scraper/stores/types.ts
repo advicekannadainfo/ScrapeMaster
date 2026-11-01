@@ -11,6 +11,12 @@ export interface StoreAdapter {
   /** Canonical URL so tracking params don't create duplicate products. */
   normalize(url: URL): string;
   parse(html: string, url: string): ScrapedProduct;
+  /** Dedicated product provider. Called only for matching product URLs; never retried. */
+  productAPI?: {
+    matches(url: URL): boolean;
+    load(url: string): Promise<string>;
+    parse(body: string, url: string): ScrapedProduct;
+  };
   /** Optional: search the store for comparable offers. */
   search?: {
     regions: Region[];

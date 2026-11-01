@@ -1,0 +1,29 @@
+{
+  "product_results": {
+    "productId": 31076617,
+    "name": "Powerlook Men Baggy Fit Mildly Distressed Jeans",
+    "brand": "Powerlook",
+    "mrp": 2899,
+    "overall_rating": 4.17,
+    "ratings_count": 1164,
+    "images": ["https://assets.myntassets.com/example-jeans.jpg"],
+    "sizes": [
+      {
+        "label": "28",
+        "mrp": 2899,
+        "discounted_price": 1159,
+        "discount_percent": 60,
+        "available": true,
+        "seller": "Example seller",
+        "stock": 45
+      },
+      {
+        "label": "30",
+        "mrp": 2999,
+        "discounted_price": 1499,
+        "available": false,
+        "stock": 0
+      }
+    ]
+  }
+}

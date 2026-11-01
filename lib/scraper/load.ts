@@ -39,7 +39,12 @@ async function attempt<T>(
   parse: (html: string) => T,
   { headers, ...render }: LoadOptions = {},
 ) {
+  if (adapter.productAPI?.matches(new URL(url))) {
+    return parse(await adapter.productAPI.load(url));
+  }
   if (headers) return parse(await fetchHtml(url, headers));
+  // ScrapingDog renders browser-only stores too; do not bypass it for Flipkart.
+  if (process.env.SCRAPINGDOG_API_KEY) return parse(await fetchHtml(url));
   if (adapter.fetchMode === 'browser') {
     await assertPublicURL(url);
     return parse(await renderHtml(url, render));
@@ -70,9 +75,14 @@ export async function loadAndParse<T>(
   const ref = sourceFor(adapter, url);
   health.assertCanAttempt(ref.source);
 
+  const productAPI = adapter.productAPI?.matches(new URL(url))
+    ? adapter.productAPI
+    : undefined;
+
   try {
     const result = await retry(() => attempt(adapter, url, parse, options), {
       ...loadRetry,
+      ...(productAPI ? { attempts: 1 } : {}),
       shouldRetry: isTransient,
       onRetry: () => health.retried(ref.source),
     });

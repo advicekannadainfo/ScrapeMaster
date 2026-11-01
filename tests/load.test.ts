@@ -5,7 +5,12 @@ const fetchHtml = vi.fn();
 const renderHtml = vi.fn();
 const browser = { configured: true };
 
-vi.mock('@/lib/scraper/http', () => ({ fetchHtml, assertPublicURL: vi.fn() }));
+vi.mock('@/lib/scraper/http', () => ({
+  fetchHtml,
+  assertPublicURL: vi.fn(),
+  fetchMyntraProductJSON: vi.fn(),
+  myntraProductID: vi.fn(),
+}));
 vi.mock('@/lib/scraper/browser', () => ({
   renderHtml,
   get isBrowserConfigured() {
@@ -34,6 +39,9 @@ const parse = (html: string) => {
 describe('loadAndParse', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    // Keep offline test cases independent of the cloud's real secret binding.
+    vi.stubEnv('SCRAPINGDOG_API_KEY', '');
     browser.configured = true;
     setHealthRegistry(new HealthRegistry());
   });
@@ -68,6 +76,16 @@ describe('loadAndParse', () => {
       '<rendered>',
     );
     expect(fetchHtml).not.toHaveBeenCalled();
+  });
+
+  it('routes browser-only stores through ScrapingDog when configured', async () => {
+    vi.stubEnv('SCRAPINGDOG_API_KEY', 'test-key');
+    fetchHtml.mockResolvedValue('<provider-rendered>');
+    await expect(
+      loadAndParse(browserStore, 'https://www.flipkart.com/x/p/1', parse),
+    ).resolves.toBe('<provider-rendered>');
+    expect(renderHtml).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
   });
 
   it('retries transient failures and records one success', async () => {

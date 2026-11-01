@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 15
     env:
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      SCRAPINGDOG_API_KEY: ${{ secrets.SCRAPINGDOG_API_KEY }}
       APP_SECRET: ${{ secrets.APP_SECRET }}
       SMTP_HOST: ${{ secrets.SMTP_HOST }}
       SMTP_PORT: ${{ secrets.SMTP_PORT }}

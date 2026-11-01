@@ -1,10 +1,11 @@
 import { amazon } from './amazon';
 import { flipkart } from './flipkart';
 import { generic } from './generic';
+import { myntra } from './myntra';
 import type { Region, StoreAdapter } from './types';
 
 /** Dedicated adapters first; the generic structured-data adapter handles everything else. */
-export const adapters: StoreAdapter[] = [amazon, flipkart];
+export const adapters: StoreAdapter[] = [amazon, flipkart, myntra];
 
 export function resolveStore(url: URL): StoreAdapter {
   return adapters.find((adapter) => adapter.matches(url)) ?? generic;
@@ -17,6 +18,6 @@ export function searchableStores(region: Region) {
   );
 }
 
-export { amazon, flipkart, generic };
+export { amazon, flipkart, myntra, generic };
 export { regionFromCurrency } from './types';
 export type { Region, StoreAdapter } from './types';

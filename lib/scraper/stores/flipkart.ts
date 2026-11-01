@@ -32,6 +32,8 @@ export function parseFlipkartProduct(html: string, url: string) {
     );
 
   const current = extractPrice($(SELECTORS.price)) || data.price || 0;
+  if (!Number.isFinite(current) || current <= 0)
+    throw new ScrapeError('Flipkart returned no valid product price.', 'parse');
   const mrp = extractPrice($(SELECTORS.mrp)) || data.originalPrice || current;
   const original = Math.max(mrp, current);
   const crumbs = $(SELECTORS.breadcrumbs)

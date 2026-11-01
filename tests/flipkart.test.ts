@@ -37,6 +37,11 @@ const affiliate = JSON.stringify({
 });
 
 describe('flipkart adapter', () => {
+  it('rejects an app shell with a heading but no price', () => {
+    expect(() =>
+      parseFlipkartProduct('<h1>Flipkart</h1>', 'https://www.flipkart.com/x/p/1'),
+    ).toThrow(/no valid product price/);
+  });
   it('parses a product page', () => {
     expect(
       parseFlipkartProduct(product, 'https://www.flipkart.com/x/p/itm1'),
