@@ -28,8 +28,27 @@ vi.mock('@/lib/env', async (importOriginal) => ({
 
 const { searchStores } = await import('@/lib/scraper/search');
 const { findOffers } = await import('@/lib/scraper/compare');
+const { findOffersWithDiagnostics } = await import('@/lib/scraper/compare');
 
 describe('searchStores', () => {
+  it('distinguishes missing Amazon candidates from rejected Flipkart identity offline', async () => {
+    pages.amazon = [];
+    pages.flipkart = [offer('flipkart', 'AL ADHEEM Blu C Chanel Perfume 100ml', 1499)];
+    const result = await findOffersWithDiagnostics({
+      title: 'BLA BLI BLU Love Drunk Perfume 100 ml Diagnostic',
+      store: 'myntra.com',
+      storeName: 'Myntra',
+      url: 'https://www.myntra.com/x/36340100/buy',
+      currentPrice: 650,
+      currency: '₹',
+      image: '',
+    });
+    expect(result.diagnostics).toEqual([
+      { store: 'amazon', status: 'no-results', candidates: 0, verified: 0 },
+      { store: 'flipkart', status: 'rejected', candidates: 1, verified: 0 },
+    ]);
+    expect(result.offers.map((o) => o.store)).toEqual(['myntra.com']);
+  });
   it('keeps Myntra at 650 and excludes the wrong Amazon result during comparison', async () => {
     pages.amazon = [
       offer(
@@ -72,6 +91,7 @@ describe('searchStores', () => {
     expect(hit.results[0].offers).toHaveLength(2);
   });
   beforeEach(() => {
+    vi.stubEnv('SCRAPINGDOG_API_KEY', '');
     for (const key of Object.keys(pages)) delete pages[key];
   });
 

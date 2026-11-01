@@ -6,6 +6,87 @@ import type { StoreAdapter } from './types';
 import { z } from 'zod';
 import { fetchMyntraProductJSON, myntraProductID } from '../http';
 import type { ScrapedProduct } from '@/types';
+import type { Offer } from '@/types';
+import { fetchMyntraSearchJSON } from '../http';
+
+const searchResponse = z.object({
+  search_results: z.array(
+    z.object({
+      productId: z.number().int().positive(),
+      productName: z.string().trim().min(1),
+      brand: z.string().trim().min(1),
+      price: z.number().positive().finite(),
+      mrp: z.number().positive().finite(),
+      rating: z.number().min(0).max(5).optional(),
+      landingPageUrl: z.string(),
+      searchImage: z.string().url().optional(),
+      sizes: z.string().optional(),
+      inventoryInfo: z.array(
+        z.object({
+          skuId: z.number().int().positive(),
+          label: z.string(),
+          inventory: z.number().int().nonnegative(),
+          available: z.boolean(),
+        }),
+      ),
+    }),
+  ),
+});
+
+export function parseMyntraSearch(body: string): Offer[] {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(body);
+  } catch {
+    throw new ScrapeError('Myntra Search API returned invalid JSON', 'parse');
+  }
+  const result = searchResponse.safeParse(raw);
+  if (!result.success)
+    throw new ScrapeError('Myntra Search API returned invalid search data', 'parse');
+  return result.data.search_results.flatMap((item) => {
+    if (!item.inventoryInfo.some((s) => s.available && s.inventory > 0)) return [];
+    const url = new URL(item.landingPageUrl, 'https://www.myntra.com/');
+    if (myntraProductID(url.toString()) !== String(item.productId))
+      throw new ScrapeError(
+        'Myntra search result product ID conflicts with URL',
+        'parse',
+      );
+    if (item.price > item.mrp)
+      throw new ScrapeError('Myntra search price exceeds MRP', 'parse');
+    let image = '';
+    if (item.searchImage) {
+      const img = new URL(item.searchImage);
+      if (
+        ['http:', 'https:'].includes(img.protocol) &&
+        img.hostname === 'assets.myntassets.com' &&
+        !img.username &&
+        !img.password &&
+        !img.port
+      ) {
+        img.protocol = 'https:';
+        image = img.toString();
+      }
+    }
+    // A catalog size list is not the selected variant. Never append a guessed size.
+    const title = item.productName.toLowerCase().startsWith(item.brand.toLowerCase())
+      ? item.productName
+      : `${item.brand} ${item.productName}`;
+    return [
+      {
+        store: 'myntra.com',
+        brand: item.brand,
+        storeProductId: String(item.productId),
+        storeName: 'Myntra',
+        title,
+        url: `https://www.myntra.com${url.pathname}`,
+        price: item.price,
+        originalPrice: item.mrp,
+        currency: '₹',
+        image,
+      },
+    ];
+  });
+}
 
 const money = z
   .union([z.number(), z.string().regex(/^\d+(?:\.\d+)?$/)])
@@ -377,6 +458,14 @@ export const myntra: StoreAdapter = {
     return `https://www.myntra.com${url.pathname}`;
   },
   parse: parseMyntraProduct,
+  search: {
+    regions: ['in'],
+    enabled: () => Boolean(process.env.SCRAPINGDOG_API_KEY),
+    url: (query) =>
+      `https://www.myntra.com/${encodeURIComponent(query.trim().replace(/\s+/g, '-'))}?rawQuery=${encodeURIComponent(query.trim())}`,
+    load: fetchMyntraSearchJSON,
+    parse: parseMyntraSearch,
+  },
   productAPI: {
     matches: (url) => /\/\d+\/buy\/?$/.test(url.pathname),
     load: fetchMyntraProductJSON,

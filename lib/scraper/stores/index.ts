@@ -18,6 +18,20 @@ export function searchableStores(region: Region) {
   );
 }
 
+/** Honest capability reporting; product URL support does not imply catalog search. */
+export function discoverySupport(region: Region) {
+  return adapters.map((adapter) => ({
+    store: adapter.id,
+    status: !adapter.search
+      ? 'not-implemented'
+      : !adapter.search.regions.includes(region)
+        ? 'unsupported-region'
+        : adapter.search.enabled?.() === false
+          ? 'missing-credentials'
+          : 'enabled',
+  }));
+}
+
 export { amazon, flipkart, myntra, generic };
 export { regionFromCurrency } from './types';
 export type { Region, StoreAdapter } from './types';

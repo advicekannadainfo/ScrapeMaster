@@ -41,6 +41,11 @@ function words(title: string) {
     .filter((w) => w && !NOISE.has(w));
 }
 
+/** Keep distinctive identity and quantity instead of truncating to eight words. */
+export function comparisonSearchQuery(title: string) {
+  return words(title).join(' ');
+}
+
 /** Conservative title evidence. Missing details do not prove an exact match. */
 export function isVerifiedMatch(source: MatchIdentity, candidate: MatchIdentity) {
   for (const key of ['brand', 'model', 'variant', 'gtin', 'mpn'] as const) {

@@ -1,6 +1,6 @@
 import 'server-only';
 import type { Offer } from '@/types';
-import { loadAndParse } from './load';
+import { discoverOffers } from './discovery';
 import { isAccessory, tokenize } from './match';
 import { searchableStores, type Region } from './stores';
 import { isVerifiedMatch, matchesDiscoveryQuery } from '@/lib/verified-offers';
@@ -31,12 +31,7 @@ function relevance(query: string, title: string) {
 async function run(query: string, region: Region): Promise<SearchResponse> {
   const stores = searchableStores(region);
   const settled = await Promise.allSettled(
-    stores.map((adapter) => {
-      const url = adapter.search!.url(query, region);
-      return loadAndParse(adapter, url, (html) => adapter.search!.parse(html, url), {
-        headers: adapter.search!.headers?.(),
-      });
-    }),
+    stores.map((adapter) => discoverOffers(adapter, query, region)),
   );
 
   const failedStores = stores

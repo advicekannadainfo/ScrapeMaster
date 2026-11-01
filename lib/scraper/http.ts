@@ -9,6 +9,45 @@ import { throttle } from './throttle';
 
 export { ScrapeError };
 
+/** Dedicated search: fixed provider host, one request, no general-scraper wrapping. */
+export async function fetchMyntraSearchJSON(input: string): Promise<string> {
+  const url = new URL(input);
+  if (
+    url.protocol !== 'https:' ||
+    !/^(www\.)?myntra\.com$/i.test(url.hostname) ||
+    url.port ||
+    url.username ||
+    url.password ||
+    /\/buy\/?$/.test(url.pathname)
+  )
+    throw new ScrapeError('Invalid Myntra search URL', 'disallowed');
+  const key = process.env.SCRAPINGDOG_API_KEY;
+  if (!key) throw new ScrapeError('ScrapingDog API key is missing.', 'unsupported');
+  await assertPublicURL(url);
+  await assertRobotsAllowed(url);
+  await throttle(url.toString());
+  try {
+    const response = await axios.get('https://api.scrapingdog.com/myntra/search', {
+      params: { api_key: key, url: url.toString() },
+      responseType: 'text',
+      maxRedirects: 0,
+      timeout: 60_000,
+      maxContentLength: 10 * 1024 * 1024,
+    });
+    return response.data;
+  } catch (error) {
+    const status = axios.isAxiosError(error) ? (error.response?.status ?? 0) : 0;
+    throw new ScrapeError(
+      `Myntra Search API failed (HTTP ${status})`,
+      axios.isAxiosError(error) && error.code === 'ECONNABORTED'
+        ? 'timeout'
+        : status === 401 || status === 402
+          ? 'unsupported'
+          : kindForStatus(status),
+    );
+  }
+}
+
 /** Strict store URL validation before passing a user URL to the fixed API host. */
 export function myntraProductID(input: string): string {
   let url: URL;

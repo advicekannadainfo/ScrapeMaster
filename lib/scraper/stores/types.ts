@@ -26,6 +26,14 @@ export interface StoreAdapter {
     parse(body: string, pageUrl: string): Offer[];
     /** Set for an official API: fetched over plain HTTP with these headers. */
     headers?: () => Record<string, string>;
+    /** Optional dedicated search transport; never wrapped by the general scraper. */
+    load?: (url: string) => Promise<string>;
+    /** Only supply a fallback whose response parser has verified fixtures. */
+    fallback?: {
+      load: (url: string) => Promise<string>;
+      parse: (body: string, pageUrl: string) => Offer[];
+      paid: boolean;
+    };
   };
 }
 

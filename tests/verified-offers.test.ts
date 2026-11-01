@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  comparisonSearchQuery,
   isVerifiedMatch,
   verifiedOffers,
   matchesDiscoveryQuery,
@@ -25,6 +26,14 @@ const offer = (name: string, price = 600): Offer => ({
 });
 
 describe('verified cross-store identity', () => {
+  it('retains product identity and quantity after removing marketing words from discovery queries', () => {
+    const query = comparisonSearchQuery(title);
+    expect(query).toBe('bla bli blu love drunk 100ml');
+    expect(matchesDiscoveryQuery(query, 'BLA BLI BLU Love Drunk Perfume 100 ml')).toBe(
+      true,
+    );
+    expect(matchesDiscoveryQuery(query, wrong)).toBe(false);
+  });
   it('rejects the reported AL ADHEEM false match despite overlapping marketing words', () => {
     expect(isVerifiedMatch({ title }, { title: wrong })).toBe(false);
     expect(matchesDiscoveryQuery('BLA BLI BLU Love Drunk 100 ml', wrong)).toBe(false);

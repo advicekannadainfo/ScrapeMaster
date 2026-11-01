@@ -11,6 +11,7 @@ import type { StoreAdapter } from './stores/types';
 type LoadOptions = Parameters<typeof renderHtml>[1] & {
   /** Fetch over plain HTTP with these headers (official APIs). */
   headers?: Record<string, string>;
+  kind?: 'search';
 };
 
 /** Retry policy for store requests; tests shorten the delays. */
@@ -20,7 +21,7 @@ export const loadRetry: RetryOptions = {
   maxDelayMs: 20_000,
 };
 
-function sourceFor(adapter: StoreAdapter, url: string) {
+function sourceFor(adapter: StoreAdapter, url: string, requestedKind?: 'search') {
   // Attribute to the dedicated store when one matches (e.g. a homepage check
   // via the generic adapter still counts as Amazon), else to the domain.
   const parsed = new URL(url);
@@ -29,7 +30,7 @@ function sourceFor(adapter: StoreAdapter, url: string) {
   const store = dedicated
     ? { id: dedicated.id, name: dedicated.name }
     : storeFromHost(parsed.hostname);
-  const kind = pageKind(url);
+  const kind = requestedKind ?? pageKind(url);
   return { source: `${store.id}:${kind}`, store: store.id, storeName: store.name, kind };
 }
 
@@ -37,8 +38,10 @@ async function attempt<T>(
   adapter: StoreAdapter,
   url: string,
   parse: (html: string) => T,
-  { headers, ...render }: LoadOptions = {},
+  { headers, kind, ...render }: LoadOptions = {},
 ) {
+  if (kind === 'search' && adapter.search?.load)
+    return parse(await adapter.search.load(url));
   if (adapter.productAPI?.matches(new URL(url))) {
     return parse(await adapter.productAPI.load(url));
   }
@@ -72,7 +75,7 @@ export async function loadAndParse<T>(
   options?: LoadOptions,
 ) {
   const health = getHealthRegistry();
-  const ref = sourceFor(adapter, url);
+  const ref = sourceFor(adapter, url, options?.kind);
   health.assertCanAttempt(ref.source);
 
   const productAPI = adapter.productAPI?.matches(new URL(url))
@@ -82,7 +85,11 @@ export async function loadAndParse<T>(
   try {
     const result = await retry(() => attempt(adapter, url, parse, options), {
       ...loadRetry,
-      ...(productAPI ? { attempts: 1 } : {}),
+      ...(productAPI ||
+      (options?.kind === 'search' && adapter.search?.load) ||
+      (process.env.SCRAPINGDOG_API_KEY && !options?.headers)
+        ? { attempts: 1 }
+        : {}),
       shouldRetry: isTransient,
       onRetry: () => health.retried(ref.source),
     });

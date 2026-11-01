@@ -77,6 +77,9 @@ export type LiveProductUpdate = {
 };
 
 export type Offer = {
+  brand?: string;
+  /** Store-local identifier; never compare this to another store's identifier. */
+  storeProductId?: string;
   store: string;
   storeName: string;
   title: string;

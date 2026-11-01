@@ -9,6 +9,7 @@ vi.mock('@/lib/scraper/http', () => ({
   fetchHtml,
   assertPublicURL: vi.fn(),
   fetchMyntraProductJSON: vi.fn(),
+  fetchMyntraSearchJSON: vi.fn(),
   myntraProductID: vi.fn(),
 }));
 vi.mock('@/lib/scraper/browser', () => ({
@@ -37,6 +38,42 @@ const parse = (html: string) => {
 };
 
 describe('loadAndParse', () => {
+  it('also avoids automatic paid retries for generic product rendering', async () => {
+    vi.stubEnv('SCRAPINGDOG_API_KEY', 'offline-key');
+    fetchHtml.mockRejectedValue(new ScrapeError('busy', 'rate-limited'));
+    await expect(
+      loadAndParse(httpStore, 'https://www.amazon.in/dp/B012345678', parse),
+    ).rejects.toThrow('busy');
+    expect(fetchHtml).toHaveBeenCalledTimes(1);
+  });
+  it('never retries a paid general-scraper search', async () => {
+    vi.stubEnv('SCRAPINGDOG_API_KEY', 'offline-key');
+    fetchHtml.mockRejectedValue(new ScrapeError('busy', 'rate-limited'));
+    await expect(
+      loadAndParse(httpStore, 'https://www.amazon.in/s?k=perfume', parse, {
+        kind: 'search',
+      }),
+    ).rejects.toThrow('busy');
+    expect(fetchHtml).toHaveBeenCalledTimes(1);
+    expect(renderHtml).not.toHaveBeenCalled();
+  });
+  it('keeps an optional dedicated search transport separate with no retries', async () => {
+    const load = vi.fn().mockRejectedValue(new ScrapeError('busy', 'rate-limited'));
+    const store = {
+      ...httpStore,
+      search: {
+        regions: ['in' as const],
+        url: () => 'https://example.com/search',
+        parse: () => [],
+        load,
+      },
+    };
+    await expect(
+      loadAndParse(store, 'https://example.com/search', parse, { kind: 'search' }),
+    ).rejects.toThrow('busy');
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(fetchHtml).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();

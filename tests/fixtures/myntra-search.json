@@ -1,0 +1,18 @@
+{
+  "search_results": [
+    {
+      "productId": 25503840,
+      "productName": "Nike Men Legend Essential 3 Next Nature Workout Shoes",
+      "brand": "Nike",
+      "price": 4995,
+      "mrp": 4995,
+      "rating": 4.06,
+      "landingPageUrl": "sports-shoes/nike/nike-men-legend-essential-3-next-nature-workout-shoes/25503840/buy",
+      "searchImage": "http://assets.myntassets.com/assets/images/example.jpg",
+      "sizes": "5,6,7,8,9,10,11,12",
+      "inventoryInfo": [
+        { "skuId": 82270480, "label": "UK6", "inventory": 1371, "available": true }
+      ]
+    }
+  ]
+}

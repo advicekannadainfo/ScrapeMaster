@@ -18,7 +18,7 @@ vi.mock('@/lib/scraper/robots', () => ({ assertRobotsAllowed: mocks.robots }));
 vi.mock('@/lib/scraper/throttle', () => ({ throttle: mocks.throttle }));
 
 import { scrapeProduct } from '@/lib/scraper';
-import { fetchMyntraProductJSON } from '@/lib/scraper/http';
+import { fetchMyntraProductJSON, fetchMyntraSearchJSON } from '@/lib/scraper/http';
 import {
   HealthRegistry,
   getHealthRegistry,
@@ -27,6 +27,35 @@ import {
 
 const url = 'https://www.myntra.com/jeans/powerlook/jeans/31076617/buy';
 describe('dedicated Myntra transport (all network calls mocked)', () => {
+  it('uses a single dedicated search request with no redirects', async () => {
+    const search = 'https://www.myntra.com/love-drunk?rawQuery=love%20drunk';
+    await fetchMyntraSearchJSON(search);
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+    expect(mocks.get).toHaveBeenCalledWith(
+      'https://api.scrapingdog.com/myntra/search',
+      expect.objectContaining({
+        params: { api_key: 'offline-test-key', url: search },
+        maxRedirects: 0,
+      }),
+    );
+  });
+  it('does not retry search rate limits or leak underlying errors', async () => {
+    mocks.get.mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 429 },
+      message: 'offline-test-key',
+    });
+    await expect(fetchMyntraSearchJSON('https://www.myntra.com/perfume')).rejects.toThrow(
+      'Myntra Search API failed (HTTP 429)',
+    );
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+  });
+  it('blocks private or unrelated search targets before requesting', async () => {
+    await expect(fetchMyntraSearchJSON('https://127.0.0.1/search')).rejects.toThrow(
+      /Invalid Myntra/,
+    );
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubEnv('SCRAPINGDOG_API_KEY', 'offline-test-key');
