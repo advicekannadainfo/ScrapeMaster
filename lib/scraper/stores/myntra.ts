@@ -32,6 +32,184 @@ const apiProduct = z.object({
     .min(1),
 });
 
+const identifier = z
+  .union([z.string().regex(/^\d+$/), z.number().int().positive()])
+  .transform(String);
+const realProduct = z.object({
+  id: identifier,
+  name: z.string().trim().min(1),
+  brand: z.object({ name: z.string().trim().min(1) }),
+  mrp: money.optional(),
+  price: z.object({ discounted: money, mrp: money }),
+  selectedSeller: z.object({
+    sellerPartnerId: identifier,
+    discountedPrice: money,
+    discount: z
+      .object({ discountId: z.string().nullable().optional() })
+      .nullable()
+      .optional(),
+  }),
+  buyButtonSellerOrder: z
+    .array(z.object({ skuId: identifier, sellerPartnerId: identifier }))
+    .min(1),
+  ratings: z
+    .object({
+      averageRating: z.number().min(0).max(5),
+      totalCount: z.number().int().nonnegative().optional(),
+      reviewInfo: z
+        .object({
+          reviewsCount: z
+            .union([z.number().int().nonnegative(), z.string().regex(/^\d+$/)])
+            .transform(Number),
+        })
+        .optional(),
+    })
+    .optional(),
+  media: z.object({
+    albums: z.array(
+      z.object({
+        images: z.array(
+          z.object({
+            imageURL: z.string().optional(),
+            secureSrc: z.string().optional(),
+            src: z.string().optional(),
+          }),
+        ),
+      }),
+    ),
+  }),
+  sizes: z
+    .array(
+      z.object({
+        mrp: money,
+        discounted_price: money,
+        seller_partner_id: identifier,
+        discount_id: z.string().nullable().optional(),
+        frg_list_link: z.string().optional(),
+        available_count: z.number().int().nonnegative().optional(),
+        sellable_inventory_count: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .min(1),
+});
+
+function parseRealMyntraProduct(raw: unknown, url: string, id: string): ScrapedProduct {
+  const result = z.object({ product_results: realProduct }).safeParse(raw);
+  if (!result.success)
+    throw new ScrapeError(
+      'Myntra Product API returned invalid real product data',
+      'parse',
+    );
+  const p = result.data.product_results;
+  if (p.id !== id)
+    throw new ScrapeError('Myntra Product API returned a different product ID', 'parse');
+  const fail = (message: string): never => {
+    throw new ScrapeError(message, 'parse');
+  };
+  const seller = p.selectedSeller;
+  const skus = new Set(
+    p.buyButtonSellerOrder
+      .filter((s) => s.sellerPartnerId === seller.sellerPartnerId)
+      .map((s) => s.skuId),
+  );
+  if (skus.size !== 1) fail('Myntra selected seller SKU is missing or ambiguous');
+  const sku = [...skus][0];
+  const discount = seller.discount?.discountId;
+  const discountProduct = (value: string) => {
+    const match = /^(\d+):\d+$/.exec(value);
+    return match?.[1] ?? fail('Myntra discount product reference is invalid');
+  };
+  if (discount && discountProduct(discount) !== id)
+    fail('Myntra selected seller references a different product');
+  const offers = p.sizes.filter((offer) => {
+    const discountId = offer.discount_id ? discountProduct(offer.discount_id) : undefined;
+    if (!offer.frg_list_link) return false;
+    let link: URL;
+    try {
+      link = new URL(offer.frg_list_link, 'https://www.myntra.com');
+    } catch {
+      return false;
+    }
+    if (link.origin !== 'https://www.myntra.com' || link.pathname !== '/free-gift-list')
+      return false;
+    const param = (name: string) => {
+      const values = link.searchParams.getAll(name);
+      return values.length === 1 && /^\d+$/.test(values[0]) ? values[0] : undefined;
+    };
+    const productId = param('baseStyleId');
+    const sellerId = param('sellerPartnerId');
+    const skuId = param('skuId');
+    if (discountId && productId && discountId !== productId)
+      fail('Myntra offer has conflicting product references');
+    if (sellerId && sellerId !== offer.seller_partner_id)
+      fail('Myntra offer has conflicting seller references');
+    return (
+      productId === id &&
+      sellerId === seller.sellerPartnerId &&
+      skuId === sku &&
+      offer.seller_partner_id === seller.sellerPartnerId &&
+      (discount ? offer.discount_id === discount : !offer.discount_id)
+    );
+  });
+  if (offers.length !== 1)
+    fail('Myntra selected product/seller/SKU offer is missing or ambiguous');
+  const selected = offers[0];
+  const price = selected.discounted_price;
+  const mrp = selected.mrp;
+  if (
+    price <= 0 ||
+    mrp < price ||
+    price !== p.price.discounted ||
+    price !== seller.discountedPrice ||
+    mrp !== p.price.mrp ||
+    (p.mrp !== undefined && p.mrp !== mrp)
+  )
+    fail('Myntra selected offer has missing or conflicting price/MRP');
+  const counts = [selected.available_count, selected.sellable_inventory_count].filter(
+    (n): n is number => n !== undefined,
+  );
+  if (!counts.length) fail('Myntra selected offer stock is missing');
+  const image = p.media.albums
+    .flatMap((a) => a.images)
+    .flatMap((i) => [i.imageURL, i.secureSrc, i.src])
+    .map((value) => {
+      if (!value || value.includes('$')) return '';
+      try {
+        const parsed = new URL(value);
+        if (
+          !['http:', 'https:'].includes(parsed.protocol) ||
+          parsed.hostname !== 'assets.myntassets.com' ||
+          parsed.username ||
+          parsed.password ||
+          parsed.port
+        )
+          return '';
+        parsed.protocol = 'https:';
+        return parsed.toString();
+      } catch {
+        return '';
+      }
+    })
+    .find(Boolean);
+  if (!image) fail('Myntra product image is missing or invalid');
+  return {
+    url,
+    store: 'myntra.com',
+    storeName: 'Myntra',
+    title: p.name,
+    currency: '₹',
+    image: image!,
+    currentPrice: price,
+    originalPrice: mrp,
+    discountRate: Math.round(((mrp - price) / mrp) * 100),
+    category: p.brand.name,
+    description: `Myntra product ${id}. Seller ${seller.sellerPartnerId}, SKU ${sku}.`,
+    stars: p.ratings?.averageRating ?? 0,
+    reviewsCount: p.ratings?.reviewInfo?.reviewsCount ?? 0,
+    isOutOfStock: counts.some((n) => n === 0),
+  };
+}
+
 export function parseMyntraAPIProduct(body: string, url: string): ScrapedProduct {
   const id = myntraProductID(url);
   let raw: unknown;
@@ -39,6 +217,13 @@ export function parseMyntraAPIProduct(body: string, url: string): ScrapedProduct
     raw = JSON.parse(body);
   } catch {
     throw new ScrapeError('Myntra Product API returned invalid JSON', 'parse');
+  }
+  // Actual provider payloads are validated independently; never fall back to
+  // the older documented shape after a real-schema identity/price failure.
+  if (raw && typeof raw === 'object' && 'product_results' in raw) {
+    const p = raw.product_results;
+    if (p && typeof p === 'object' && 'id' in p)
+      return parseRealMyntraProduct(raw, url, id);
   }
   const result = z.object({ product_results: apiProduct }).safeParse(raw);
   if (!result.success)

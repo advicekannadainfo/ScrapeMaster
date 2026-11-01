@@ -1,0 +1,80 @@
+{
+  "product_results": {
+    "id": 36340100,
+    "name": "BLA BLI BLU Love Drunk Long Lasting Perfume - 100 ml",
+    "brand": { "name": "BLA BLI BLU" },
+    "mrp": 1000,
+    "price": { "mrp": 1000, "discounted": 650 },
+    "selectedSeller": {
+      "sellerPartnerId": 45834,
+      "discountedPrice": 650,
+      "discount": { "discountId": "36340100:986224708" },
+      "netQuantity": [{ "quantity": 100, "unit": "ml", "type": "single" }]
+    },
+    "buyButtonSellerOrder": [
+      { "skuId": 116095841, "sellerPartnerId": 45834 },
+      { "skuId": 116095841, "sellerPartnerId": 56920 }
+    ],
+    "ratings": {
+      "averageRating": 4.558584836865752,
+      "totalCount": 42511,
+      "reviewInfo": { "reviewsCount": "10223" }
+    },
+    "media": {
+      "albums": [
+        {
+          "name": "default",
+          "images": [
+            {
+              "src": "http://assets.myntassets.com/h_($height),q_($qualityPercentage),w_($width)/v1/assets/images/2025/OCTOBER/15/sASg922P_9770b5e427074078935f50285cb45c04.jpg",
+              "secureSrc": "https://assets.myntassets.com/h_($height),q_($qualityPercentage),w_($width)/v1/assets/images/2025/OCTOBER/15/sASg922P_9770b5e427074078935f50285cb45c04.jpg",
+              "imageURL": "http://assets.myntassets.com/assets/images/2025/OCTOBER/15/sASg922P_9770b5e427074078935f50285cb45c04.jpg"
+            }
+          ]
+        }
+      ]
+    },
+    "sizes": [
+      {
+        "mrp": 1000,
+        "seller_partner_id": 45834,
+        "available_count": 9714,
+        "sellable_inventory_count": 9714,
+        "discount_id": "36340100:986224708",
+        "discounted_price": 650,
+        "frg_list_link": "/free-gift-list?baseStyleId=36340100&sellerPartnerId=45834&skuId=116095841&src=pdp",
+        "per_unit_amount": { "amount": 650, "unit": "ml", "quantity": 100 }
+      },
+      {
+        "mrp": 1000,
+        "seller_partner_id": 56920,
+        "available_count": 1,
+        "sellable_inventory_count": 1,
+        "discount_id": null,
+        "discounted_price": 1000,
+        "frg_list_link": "/free-gift-list?baseStyleId=36340100&sellerPartnerId=56920&skuId=116095841&src=pdp",
+        "per_unit_amount": { "amount": 1000, "unit": "ml", "quantity": 100 }
+      },
+      {
+        "mrp": 275,
+        "seller_partner_id": 4036,
+        "available_count": 14284,
+        "sellable_inventory_count": 14284,
+        "discount_id": "38312143:953229411",
+        "discounted_price": 184,
+        "frg_list_link": "/free-gift-list?baseStyleId=38312143&sellerPartnerId=4036&skuId=122303675&src=pdp",
+        "per_unit_amount": { "amount": 613.33, "unit": "ml", "quantity": 100 }
+      },
+      {
+        "mrp": 275,
+        "seller_partner_id": 45834,
+        "available_count": 236,
+        "sellable_inventory_count": 236,
+        "discount_id": "38312143:1027378731",
+        "discounted_price": 252,
+        "frg_list_link": "/free-gift-list?baseStyleId=38312143&sellerPartnerId=45834&skuId=122303675&src=pdp",
+        "per_unit_amount": { "amount": 840, "unit": "ml", "quantity": 100 }
+      }
+    ]
+  }
+}
