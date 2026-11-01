@@ -11,6 +11,117 @@ import {
 } from '../extract';
 import { ScrapeError } from '../errors';
 import type { Region, StoreAdapter } from './types';
+import { z } from 'zod';
+import { fetchAmazonSearchJSON, fetchAmazonProductJSON, fetchHtml } from '../http';
+import { parseAmazonAPIProduct } from './retail-product-json';
+import { amazonIndiaProductInput } from '../retail-product-input';
+
+const searchEnvelope = z.object({ results: z.array(z.unknown()) });
+const dedicatedRow = z.object({
+  type: z.literal('search_product'),
+  title: z.string().trim().min(1),
+  asin: z.string().regex(/^[A-Z0-9]{10}$/i),
+  optimized_url: z.string().url(),
+  extracted_price: z.unknown().optional(),
+  price_string: z.unknown().optional(),
+  price: z.unknown().optional(),
+  currency: z.enum(['₹', 'INR']),
+  image: z.string().url().optional(),
+  sponsored: z.boolean(),
+  availability_quantity: z.number().int().nonnegative().optional(),
+});
+
+function formattedINR(value: unknown): number | undefined {
+  if (typeof value !== 'string') return;
+  const match =
+    /^(?:₹|INR)\s*((?:\d+|\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3})(?:\.\d{1,2})?)$/i.exec(
+      value.trim(),
+    );
+  if (!match) return;
+  const price = Number(match[1].replace(/,/g, ''));
+  return Number.isFinite(price) && price > 0 ? price : undefined;
+}
+
+/** Only the documented object envelope is supported; array snippets are ambiguous. */
+export function parseAmazonSearchAPI(body: string): Offer[] {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(body);
+  } catch {
+    throw new ScrapeError('Amazon Search API returned invalid JSON', 'parse');
+  }
+  const envelope = searchEnvelope.safeParse(raw);
+  if (!envelope.success)
+    throw new ScrapeError(
+      'Amazon Search API returned unsupported response shape',
+      'parse',
+    );
+  let invalid = 0;
+  const offers: Offer[] = [];
+  for (const value of envelope.data.results) {
+    if (
+      value &&
+      typeof value === 'object' &&
+      'type' in value &&
+      typeof value.type === 'string' &&
+      value.type !== 'search_product'
+    )
+      continue;
+    const result = dedicatedRow.safeParse(value);
+    if (!result.success) {
+      invalid++;
+      continue;
+    }
+    const row = result.data;
+    if (row.sponsored || row.availability_quantity === 0) continue;
+    const url = new URL(row.optimized_url);
+    const asin = url.pathname
+      .match(/\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})(?:\/|$)/i)?.[1]
+      ?.toUpperCase();
+    if (
+      url.protocol !== 'https:' ||
+      !/^(www\.)?amazon\.in$/.test(url.hostname) ||
+      url.username ||
+      url.password ||
+      url.port ||
+      asin !== row.asin.toUpperCase()
+    ) {
+      invalid++;
+      continue;
+    }
+    const price =
+      typeof row.extracted_price === 'number' &&
+      Number.isFinite(row.extracted_price) &&
+      row.extracted_price > 0
+        ? row.extracted_price
+        : (formattedINR(row.price_string) ?? formattedINR(row.price));
+    if (!price) {
+      invalid++;
+      continue;
+    }
+    let image: string | undefined;
+    if (row.image) {
+      const img = new URL(row.image);
+      if (img.protocol === 'https:' && !img.username && !img.password && !img.port)
+        image = img.toString();
+    }
+    offers.push({
+      store: 'amazon',
+      storeName: 'Amazon',
+      title: row.title,
+      url: `https://www.amazon.in/dp/${asin}`,
+      storeProductId: asin,
+      price,
+      currency: '₹',
+      image,
+    });
+  }
+  // Mixed valid/invalid rows can still yield verified candidates. Do not silently
+  // convert a wholly malformed product response into "no products found".
+  if (invalid && !offers.length)
+    throw new ScrapeError('Amazon Search API had no valid product listings', 'parse');
+  return offers;
+}
 
 const HOST =
   /(^|\.)amazon\.(com|in|co\.uk|de|fr|it|es|ca|com\.au|co\.jp|com\.mx|com\.br|nl|se|pl|sg|ae|sa)$/i;
@@ -172,15 +283,100 @@ export const amazon: StoreAdapter = {
   name: 'Amazon',
   matches: (url) => HOST.test(url.hostname),
   normalize(url) {
+    if (process.env.SCRAPINGDOG_API_KEY && /^(www\.|m\.)?amazon\.in$/.test(url.hostname))
+      return amazonIndiaProductInput(url.toString()).url;
     const asin = url.pathname.match(ASIN)?.[1];
     return asin
       ? `https://${url.hostname.toLowerCase()}/dp/${asin.toUpperCase()}`
       : url.toString();
   },
   parse: parseAmazonProduct,
-  search: {
-    regions: ['us', 'in', 'uk', 'de'],
-    url: (query, region) => `https://${DOMAINS[region]}/s?k=${encodeURIComponent(query)}`,
-    parse: parseAmazonSearch,
+  get productAPI() {
+    return process.env.SCRAPINGDOG_API_KEY
+      ? {
+          matches: (url: URL) =>
+            /^(www\.|m\.)?amazon\.in$/.test(url.hostname) &&
+            /\/(dp|gp\/product|gp\/aw\/d)\//.test(url.pathname),
+          load: fetchAmazonProductJSON,
+          parse: parseAmazonAPIProduct,
+          fallback: {
+            paid: true,
+            load: fetchHtml,
+            parse: (html: string, input: string) => {
+              const target = amazonIndiaProductInput(input);
+              const $ = cheerio.load(html);
+              if (String($('#ASIN').attr('value') ?? '').toUpperCase() !== target.asin)
+                throw new ScrapeError(
+                  'Amazon HTML fallback cannot verify selected ASIN',
+                  'parse',
+                );
+              if (!/^in stock\.?$/i.test($('#availability').text().trim()))
+                throw new ScrapeError(
+                  'Amazon HTML fallback stock is unknown or unavailable',
+                  'parse',
+                );
+              const p = parseAmazonProduct(html, target.url);
+              if (
+                p.currency !== '₹' ||
+                !Number.isFinite(p.currentPrice) ||
+                p.currentPrice <= 0
+              )
+                throw new ScrapeError(
+                  'Amazon HTML fallback has no valid INR selling price',
+                  'parse',
+                );
+              return { ...p, storeProductId: target.asin };
+            },
+          },
+        }
+      : undefined;
+  },
+  get search() {
+    if (process.env.SCRAPINGDOG_API_KEY)
+      return {
+        regions: ['us', 'in', 'uk', 'de'] as Region[],
+        url: (query: string, region: Region) =>
+          `https://${DOMAINS[region]}/s?k=${encodeURIComponent(query)}`,
+        load: (input: string) => {
+          const url = new URL(input);
+          if (
+            !Object.values(DOMAINS).includes(url.hostname) ||
+            url.protocol !== 'https:' ||
+            url.pathname !== '/s' ||
+            url.username ||
+            url.password ||
+            url.port ||
+            !url.searchParams.get('k')
+          )
+            throw new ScrapeError('Invalid Amazon search URL', 'disallowed');
+          if (
+            url.hostname === 'www.amazon.in' &&
+            url.pathname === '/s' &&
+            url.searchParams.get('k')
+          )
+            return fetchAmazonSearchJSON(url.searchParams.get('k')!);
+          if (
+            !Object.values(DOMAINS).includes(url.hostname) ||
+            url.protocol !== 'https:' ||
+            url.pathname !== '/s' ||
+            url.username ||
+            url.password ||
+            url.port
+          )
+            throw new ScrapeError('Invalid Amazon search URL', 'disallowed');
+          return fetchHtml(input);
+        },
+        parse: (body: string, pageUrl: string) =>
+          new URL(pageUrl).hostname === 'www.amazon.in'
+            ? parseAmazonSearchAPI(body)
+            : parseAmazonSearch(body, pageUrl),
+        fallback: { paid: true, load: fetchHtml, parse: parseAmazonSearch },
+      };
+    return {
+      regions: ['us', 'in', 'uk', 'de'] as Region[],
+      url: (query: string, region: Region) =>
+        `https://${DOMAINS[region]}/s?k=${encodeURIComponent(query)}`,
+      parse: parseAmazonSearch,
+    };
   },
 };

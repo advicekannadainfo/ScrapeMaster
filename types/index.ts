@@ -8,6 +8,9 @@ export type User = {
 };
 
 export type Product = {
+  brand?: string;
+  storeProductId?: string;
+  variant?: string;
   _id: string;
   url: string;
   store: string;

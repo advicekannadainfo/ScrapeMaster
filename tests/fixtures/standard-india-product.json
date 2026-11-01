@@ -1,0 +1,27 @@
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "url": "https://www.ajio.com/example-product",
+  "name": "Example Cotton Shirt",
+  "brand": { "@type": "Brand", "name": "Example" },
+  "productID": "EXAMPLE-PRODUCT",
+  "sku": "EXAMPLE-RED-M",
+  "color": "Red",
+  "size": "M",
+  "image": "https://cdn.example.org/product.jpg",
+  "aggregateRating": { "ratingValue": "4.5", "reviewCount": "10" },
+  "offers": {
+    "@type": "Offer",
+    "price": "650.00",
+    "priceCurrency": "INR",
+    "availability": "https://schema.org/InStock",
+    "priceSpecification": [
+      {
+        "@type": "UnitPriceSpecification",
+        "priceType": "https://schema.org/ListPrice",
+        "price": "1000.00",
+        "priceCurrency": "INR"
+      }
+    ]
+  }
+}

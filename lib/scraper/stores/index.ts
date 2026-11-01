@@ -2,10 +2,13 @@ import { amazon } from './amazon';
 import { flipkart } from './flipkart';
 import { generic } from './generic';
 import { myntra } from './myntra';
+import { ajio } from './ajio';
+import { nykaa } from './nykaa';
+import { croma } from './croma';
 import type { Region, StoreAdapter } from './types';
 
 /** Dedicated adapters first; the generic structured-data adapter handles everything else. */
-export const adapters: StoreAdapter[] = [amazon, flipkart, myntra];
+export const adapters: StoreAdapter[] = [amazon, flipkart, myntra, ajio, nykaa, croma];
 
 export function resolveStore(url: URL): StoreAdapter {
   return adapters.find((adapter) => adapter.matches(url)) ?? generic;
@@ -32,6 +35,6 @@ export function discoverySupport(region: Region) {
   }));
 }
 
-export { amazon, flipkart, myntra, generic };
+export { amazon, flipkart, myntra, ajio, nykaa, croma, generic };
 export { regionFromCurrency } from './types';
 export type { Region, StoreAdapter } from './types';

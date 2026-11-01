@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "type": "search_product",
+      "title": "BLA BLI BLU Love Drunk Perfume 100 ml",
+      "asin": "B0EXAMPL01",
+      "optimized_url": "https://www.amazon.in/dp/B0EXAMPL01?tag=example",
+      "extracted_price": 700,
+      "price_string": "₹700.00",
+      "price": "₹700.00",
+      "currency": "₹",
+      "image": "https://m.media-amazon.com/images/I/example.jpg",
+      "sponsored": false
+    }
+  ]
+}

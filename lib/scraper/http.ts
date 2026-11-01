@@ -8,6 +8,111 @@ import { assertRobotsAllowed } from './robots';
 import { throttle } from './throttle';
 
 export { ScrapeError };
+import { amazonIndiaProductInput, flipkartProductInput } from './retail-product-input';
+
+/** Prepared transports only: adapters stay on verified HTML until JSON contracts exist. */
+export async function fetchAmazonProductJSON(input: string): Promise<string> {
+  const target = amazonIndiaProductInput(input);
+  return dedicatedProductRequest(
+    'amazon',
+    { asin: target.asin, domain: 'in', country: 'in' },
+    target.url,
+  );
+}
+
+export async function fetchFlipkartProductJSON(input: string): Promise<string> {
+  const target = flipkartProductInput(input);
+  return dedicatedProductRequest('flipkart', { url: target.url }, target.url);
+}
+
+async function dedicatedProductRequest(
+  store: 'amazon' | 'flipkart',
+  params: Record<string, string>,
+  target: string,
+): Promise<string> {
+  const key = process.env.SCRAPINGDOG_API_KEY;
+  if (!key) throw new ScrapeError('ScrapingDog API key is missing.', 'unsupported');
+  await assertPublicURL(target);
+  await throttle(target);
+  try {
+    const response = await axios.get(`https://api.scrapingdog.com/${store}/product`, {
+      params: { api_key: key, ...params },
+      timeout: 60_000,
+      maxRedirects: 0,
+      maxContentLength: 10 * 1024 * 1024,
+      responseType: 'text',
+    });
+    return response.data;
+  } catch (error) {
+    const status = axios.isAxiosError(error) ? (error.response?.status ?? 0) : 0;
+    throw new ScrapeError(
+      `${store} Product API failed (HTTP ${status})`,
+      axios.isAxiosError(error) && error.code === 'ECONNABORTED'
+        ? 'timeout'
+        : status === 401 || status === 402
+          ? 'unsupported'
+          : kindForStatus(status),
+    );
+  }
+}
+
+async function dedicatedSearchRequest(
+  endpoint: 'amazon' | 'flipkart',
+  params: Record<string, string>,
+): Promise<string> {
+  const key = process.env.SCRAPINGDOG_API_KEY;
+  if (!key) throw new ScrapeError('ScrapingDog API key is missing.', 'unsupported');
+  try {
+    const response = await axios.get(`https://api.scrapingdog.com/${endpoint}/search`, {
+      params: { api_key: key, ...params },
+      timeout: 60_000,
+      maxRedirects: 0,
+      maxContentLength: 10 * 1024 * 1024,
+      responseType: 'text',
+    });
+    return response.data;
+  } catch (error) {
+    const status = axios.isAxiosError(error) ? (error.response?.status ?? 0) : 0;
+    throw new ScrapeError(
+      `${endpoint} Search API failed (HTTP ${status})`,
+      axios.isAxiosError(error) && error.code === 'ECONNABORTED'
+        ? 'timeout'
+        : status === 401 || status === 402
+          ? 'unsupported'
+          : kindForStatus(status),
+    );
+  }
+}
+
+/** Dedicated Amazon India search transport; fixed first page and region. */
+export async function fetchAmazonSearchJSON(query: string): Promise<string> {
+  if (!query.trim() || query.length > 500)
+    throw new ScrapeError('Invalid Amazon search query', 'disallowed');
+  return dedicatedSearchRequest('amazon', {
+    query: query.trim(),
+    domain: 'in',
+    page: '1',
+    country: 'in',
+  });
+}
+
+export async function fetchFlipkartSearchJSON(input: string): Promise<string> {
+  const url = new URL(input);
+  if (
+    url.protocol !== 'https:' ||
+    url.hostname !== 'www.flipkart.com' ||
+    url.pathname !== '/search' ||
+    url.username ||
+    url.password ||
+    url.port ||
+    !url.searchParams.get('q')
+  )
+    throw new ScrapeError('Invalid Flipkart search URL', 'disallowed');
+  await assertPublicURL(url);
+  // Provider API only; direct/generic crawling retains its existing robots guard.
+  await throttle(input);
+  return dedicatedSearchRequest('flipkart', { url: url.toString() });
+}
 
 /** Dedicated search: fixed provider host, one request, no general-scraper wrapping. */
 export async function fetchMyntraSearchJSON(input: string): Promise<string> {

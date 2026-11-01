@@ -16,6 +16,11 @@ export interface StoreAdapter {
     matches(url: URL): boolean;
     load(url: string): Promise<string>;
     parse(body: string, url: string): ScrapedProduct;
+    fallback?: {
+      load: (url: string) => Promise<string>;
+      parse: (body: string, url: string) => ScrapedProduct;
+      paid: boolean;
+    };
   };
   /** Optional: search the store for comparable offers. */
   search?: {

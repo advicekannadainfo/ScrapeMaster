@@ -17,7 +17,7 @@ import SuggestionList, {
   type SuggestionItem,
 } from '@/components/search/SuggestionList';
 import { useSuggestions } from '@/components/search/useSuggestions';
-import { getCountry, regionForCountry, SEARCHABLE_STORES } from '@/lib/locale';
+import { getCountry } from '@/lib/locale';
 import { cn, isValidProductURL } from '@/lib/utils';
 
 const STEPS = ['Fetching page', 'Reading price', 'Saving snapshot'];
@@ -245,9 +245,8 @@ export default function Searchbar({ defaultValue = '' }: { defaultValue?: string
           <span className="text-up">{error}</span>
         ) : (
           <span className="text-muted">
-            {country.flag} Searches{' '}
-            {SEARCHABLE_STORES[regionForCountry(country.code)].join(' & ')} live, or paste
-            a link from any store.
+            {country.flag} Search supported stores for your region, or paste a product
+            link. Results depend on configured sources and verified matches.
           </span>
         )}
       </p>

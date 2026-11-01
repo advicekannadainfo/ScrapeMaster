@@ -1,0 +1,28 @@
+{
+  "title": "BLA BLI BLU Example Perfume 30ml",
+  "main_title": "BLA BLI BLU Example Perfume 30ml",
+  "product_information": {
+    "ASIN": "B0FYGRL51R",
+    "Brand": "BLA BLI BLU",
+    "Item Volume": "30 Millilitres",
+    "Package Size Name": "30ml"
+  },
+  "price": "₹184.00 with 33 percent savings",
+  "extracted_price": 184,
+  "price_symbol": "₹",
+  "extracted_median_price": 275,
+  "availability_status": "In stock",
+  "main_image": "https://m.media-amazon.com/images/I/example.jpg",
+  "images": ["https://m.media-amazon.com/images/I/example.jpg"],
+  "extracted_average_rating": 4.5,
+  "extracted_total_reviews": 100,
+  "purchase_options": { "single_offer": { "extracted_price": 184, "stock": "In stock" } },
+  "related_product_sections": [
+    {
+      "asin": "B0FLWST1D4",
+      "title": "BLABLIBLU Love Drunk Unisex Perfume 100ml",
+      "price": 649,
+      "url": "https://www.amazon.in/dp/B0FLWST1D4"
+    }
+  ]
+}

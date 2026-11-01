@@ -10,6 +10,9 @@ vi.mock('@/lib/scraper/http', () => ({
   assertPublicURL: vi.fn(),
   fetchMyntraProductJSON: vi.fn(),
   fetchMyntraSearchJSON: vi.fn(),
+  fetchFlipkartSearchJSON: vi.fn(),
+  fetchAmazonSearchJSON: vi.fn(),
+  fetchAmazonProductJSON: vi.fn(),
   myntraProductID: vi.fn(),
 }));
 vi.mock('@/lib/scraper/browser', () => ({

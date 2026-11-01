@@ -5,6 +5,75 @@ import { ScrapeError } from '../errors';
 import { extractStructured } from '../structured';
 import { env, isFlipkartAffiliateConfigured } from '@/lib/env';
 import type { StoreAdapter } from './types';
+import { z } from 'zod';
+import { fetchFlipkartSearchJSON, fetchFlipkartProductJSON, fetchHtml } from '../http';
+import { parseFlipkartAPIProduct } from './retail-product-json';
+import { flipkartProductInput } from '../retail-product-input';
+import { rememberFlipkartSearch } from '../flipkart-evidence';
+
+const dedicatedResults = z.object({
+  search_results: z.array(
+    z.object({
+      title: z.string().trim().min(1),
+      url: z.string().url(),
+      price: z.number().finite().positive(),
+      image: z.string().url().optional(),
+      product_id: z.string().trim().min(1),
+    }),
+  ),
+});
+
+export function parseFlipkartSearchAPI(body: string): Offer[] {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(body);
+  } catch {
+    throw new ScrapeError('Flipkart Search API returned invalid JSON', 'parse');
+  }
+  const result = dedicatedResults.safeParse(raw);
+  if (!result.success)
+    throw new ScrapeError(
+      'Flipkart Search API returned unsupported or invalid search data',
+      'parse',
+    );
+  const offers = result.data.search_results.map((item) => {
+    const url = new URL(item.url);
+    if (
+      url.protocol !== 'https:' ||
+      !/^(www\.)?flipkart\.com$/.test(url.hostname) ||
+      url.username ||
+      url.password ||
+      url.port ||
+      !url.pathname.includes('/p/') ||
+      url.searchParams.getAll('pid').length !== 1 ||
+      url.searchParams.get('pid') !== item.product_id
+    )
+      throw new ScrapeError(
+        'Flipkart search URL/product identifier cannot be verified',
+        'parse',
+      );
+    return {
+      store: 'flipkart',
+      storeName: 'Flipkart',
+      title: item.title,
+      url: canonicalUrl(item.url),
+      price: item.price,
+      currency: '₹',
+      image: item.image,
+      storeProductId: item.product_id,
+    };
+  });
+  rememberFlipkartSearch(offers);
+  return offers;
+}
+
+const dedicatedSearch: NonNullable<StoreAdapter['search']> = {
+  regions: ['in'],
+  enabled: () => Boolean(process.env.SCRAPINGDOG_API_KEY),
+  url: (query) => `https://www.flipkart.com/search?q=${encodeURIComponent(query)}`,
+  load: fetchFlipkartSearchJSON,
+  parse: parseFlipkartSearchAPI,
+};
 
 // Flipkart ships obfuscated class names that change periodically; keep current and legacy ones.
 const SELECTORS = {
@@ -130,20 +199,88 @@ export const flipkart: StoreAdapter = {
   fetchMode: 'browser',
   matches: (url) => /(^|\.)flipkart\.com$/i.test(url.hostname),
   normalize(url) {
+    if (process.env.SCRAPINGDOG_API_KEY) return flipkartProductInput(url.toString()).url;
     const pid = url.searchParams.get('pid');
     return `https://www.flipkart.com${url.pathname}${pid ? `?pid=${pid}` : ''}`;
   },
   parse: parseFlipkartProduct,
-  search: {
-    regions: ['in'],
-    enabled: () => isFlipkartAffiliateConfigured,
-    url: (query) =>
-      `${AFFILIATE_SEARCH}?query=${encodeURIComponent(query)}&resultCount=10`,
-    parse: parseFlipkartAffiliateSearch,
-    headers: () => ({
-      'Fk-Affiliate-Id': env.FLIPKART_AFFILIATE_ID!,
-      'Fk-Affiliate-Token': env.FLIPKART_AFFILIATE_TOKEN!,
-      Accept: 'application/json',
-    }),
+  get productAPI() {
+    return process.env.SCRAPINGDOG_API_KEY
+      ? {
+          matches: (url: URL) => {
+            try {
+              flipkartProductInput(url.toString());
+              return true;
+            } catch {
+              return false;
+            }
+          },
+          load: fetchFlipkartProductJSON,
+          parse: parseFlipkartAPIProduct,
+          fallback: {
+            paid: true,
+            load: fetchHtml,
+            parse: (html: string, input: string) => {
+              const target = flipkartProductInput(input);
+              const $ = cheerio.load(html);
+              const canonical = $('link[rel="canonical"]').attr('href');
+              if (
+                !canonical ||
+                canonicalUrl(flipkartProductInput(canonical).url) !==
+                  canonicalUrl(target.url)
+              )
+                throw new ScrapeError(
+                  'Flipkart HTML fallback cannot verify canonical product identity',
+                  'parse',
+                );
+              const structured = extractStructured($);
+              if (structured.inStock === undefined)
+                throw new ScrapeError('Flipkart HTML fallback stock is unknown', 'parse');
+              const product = parseFlipkartProduct(html, target.url);
+              if (!product.image.startsWith('https://'))
+                throw new ScrapeError(
+                  'Flipkart HTML fallback needs an HTTPS product image',
+                  'parse',
+                );
+              return product;
+            },
+          },
+        }
+      : undefined;
+  },
+  get search() {
+    if (process.env.SCRAPINGDOG_API_KEY)
+      return {
+        ...dedicatedSearch,
+        ...(isFlipkartAffiliateConfigured
+          ? {
+              fallback: {
+                paid: false,
+                load: async (input: string) =>
+                  fetchHtml(
+                    `${AFFILIATE_SEARCH}?query=${encodeURIComponent(new URL(input).searchParams.get('q') ?? '')}&resultCount=10`,
+                    {
+                      'Fk-Affiliate-Id': env.FLIPKART_AFFILIATE_ID!,
+                      'Fk-Affiliate-Token': env.FLIPKART_AFFILIATE_TOKEN!,
+                      Accept: 'application/json',
+                    },
+                  ),
+                parse: parseFlipkartAffiliateSearch,
+              },
+            }
+          : {}),
+      };
+    return {
+      regions: ['in' as const],
+      enabled: () => isFlipkartAffiliateConfigured,
+      url: (query: string) =>
+        `${AFFILIATE_SEARCH}?query=${encodeURIComponent(query)}&resultCount=10`,
+      parse: parseFlipkartAffiliateSearch,
+      headers: () => ({
+        'Fk-Affiliate-Id': env.FLIPKART_AFFILIATE_ID!,
+        'Fk-Affiliate-Token': env.FLIPKART_AFFILIATE_TOKEN!,
+        Accept: 'application/json',
+      }),
+    };
   },
 };

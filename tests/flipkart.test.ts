@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+afterEach(() => vi.unstubAllEnvs());
 import {
   flipkart,
   parseFlipkartProduct,
@@ -79,10 +80,12 @@ describe('flipkart adapter', () => {
   });
 
   it('only searches when affiliate credentials are configured', () => {
+    vi.stubEnv('SCRAPINGDOG_API_KEY', '');
     expect(flipkart.search?.enabled?.()).toBe(false);
   });
 
   it('normalizes product URLs to path + pid', () => {
+    vi.stubEnv('SCRAPINGDOG_API_KEY', '');
     const url = new URL('https://dl.flipkart.com/s/x/p/itm1?pid=ABC&lid=1&affid=me');
     expect(flipkart.matches(url)).toBe(true);
     expect(flipkart.normalize(url)).toBe('https://www.flipkart.com/s/x/p/itm1?pid=ABC');

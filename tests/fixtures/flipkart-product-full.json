@@ -1,0 +1,66 @@
+{
+  "product_results": {
+    "title": "Samsung Essential Series S3 55.88 cm (22 Inch) Full HD LED Backlit IPS Panel Monitor",
+    "brand": "Samsung",
+    "brand_url": "https://www.flipkart.com/samsung/pr?sid=6bo,b5g",
+    "description": "The Samsung Essential Series S3 monitor offers Full HD resolution with an IPS panel for wide viewing angles.",
+    "price": "₹8,999",
+    "previous_price": "₹14,500",
+    "discount": "38% off",
+    "delivery_date": "Delivery by Tomorrow",
+    "payment_options": {
+      "emi_available": true,
+      "cod_available": true,
+      "net_banking": true
+    },
+    "seller": {
+      "name": "RetailNet",
+      "rating": "4.3",
+      "services": ["7 Days Replacement", "GST Invoice Available"]
+    },
+    "highlights": [
+      "IPS Panel",
+      "Full HD (1920 x 1080) Resolution",
+      "75 Hz Refresh Rate",
+      "5 ms Response Time",
+      "D-Sub, HDMI Ports"
+    ],
+    "main_image": "https://rukminim2.flixcart.com/image/832/832/xif0q/monitor/d/f/b/-original-imahgfdzgzgzp2uf.jpeg",
+    "images": [
+      "https://rukminim2.flixcart.com/image/832/832/xif0q/monitor/d/f/b/-original-imahgfdzgzgzp2uf.jpeg",
+      "https://rukminim2.flixcart.com/image/832/832/xif0q/monitor/d/f/b/-original-imahgfdzgzgzp2ug.jpeg"
+    ],
+    "overall_rating": 4.3,
+    "ratings_count": 3284,
+    "reviews_count": 412,
+    "specifications": {
+      "General": {
+        "Brand": "Samsung",
+        "Model Name": "LS22D300GAWXXL",
+        "Display Size": "55.88 cm (22 Inch)"
+      },
+      "Display Features": {
+        "Panel Type": "IPS",
+        "Resolution": "Full HD (1920 x 1080)",
+        "Refresh Rate": "75 Hz"
+      },
+      "Connectivity": { "Ports": "D-Sub, HDMI" }
+    },
+    "reviews": [
+      {
+        "rating": 5,
+        "title": "[REDACTED]",
+        "comment": "[REDACTED]",
+        "reviewer": "[REDACTED]",
+        "helpful_count": 24
+      },
+      {
+        "rating": 4,
+        "title": "[REDACTED]",
+        "comment": "[REDACTED]",
+        "reviewer": "[REDACTED]",
+        "helpful_count": 11
+      }
+    ]
+  }
+}

@@ -13,7 +13,15 @@ import { ScrapeError } from './errors';
 export async function findOffersWithDiagnostics(
   product: Pick<
     ScrapedProduct,
-    'title' | 'currency' | 'store' | 'storeName' | 'url' | 'currentPrice' | 'image'
+    | 'title'
+    | 'currency'
+    | 'store'
+    | 'storeName'
+    | 'url'
+    | 'currentPrice'
+    | 'image'
+    | 'brand'
+    | 'variant'
   >,
 ) {
   const region = regionFromCurrency(product.currency);
