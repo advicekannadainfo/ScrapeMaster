@@ -5,9 +5,10 @@ import Money from '@/components/ui/Money';
 import StoreLogo from '@/components/ui/StoreLogo';
 import type { Product } from '@/types';
 import { cn } from '@/lib/utils';
+import { verifiedOffers } from '@/lib/verified-offers';
 
 export default function OfferComparison({ product }: { product: Product }) {
-  const offers = product.offers ?? [];
+  const offers = verifiedOffers(product);
   const best = offers[0];
   // Every listing at the minimum price is a lowest price, not just the first.
   const lowest = best?.price;
@@ -80,12 +81,9 @@ export default function OfferComparison({ product }: { product: Product }) {
           ))}
         </ul>
       ) : (
-        product.offersCheckedAt && (
-          <p className="mt-4 text-sm text-muted">
-            No matching listings found on other supported stores yet. We check again
-            daily.
-          </p>
-        )
+        <p className="mt-4 text-sm text-muted">
+          No verified match on other supported stores yet.
+        </p>
       )}
     </section>
   );

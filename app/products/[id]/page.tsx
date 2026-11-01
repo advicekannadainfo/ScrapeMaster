@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { verifiedOffers } from '@/lib/verified-offers';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { after } from 'next/server';
@@ -74,7 +75,7 @@ export default async function ProductPage({ params }: Props) {
   const history = product.priceHistory ?? [];
   const verdict = getDealVerdict({ ...product, priceHistory: history });
   // Send buyers to the cheapest matching listing, falling back to this one.
-  const buyOffer = [...(product.offers ?? [])].sort((a, b) => a.price - b.price)[0] ?? {
+  const buyOffer = verifiedOffers(product)[0] ?? {
     url: product.url,
     store: product.store,
     storeName: product.storeName,

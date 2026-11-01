@@ -27,8 +27,50 @@ vi.mock('@/lib/env', async (importOriginal) => ({
 }));
 
 const { searchStores } = await import('@/lib/scraper/search');
+const { findOffers } = await import('@/lib/scraper/compare');
 
 describe('searchStores', () => {
+  it('keeps Myntra at 650 and excludes the wrong Amazon result during comparison', async () => {
+    pages.amazon = [
+      offer(
+        'amazon',
+        'Blu C Chanel by AL ADHEEM Premium Long Lasting Perfume 100 ml',
+        1499,
+      ),
+    ];
+    pages.flipkart = [offer('flipkart', 'BLA BLI BLU Love Drunk Perfume 100ml', 700)];
+    const results = await findOffers({
+      title: 'BLA BLI BLU Love Drunk Long Lasting Perfume - 100 ml',
+      store: 'myntra.com',
+      storeName: 'Myntra',
+      url: 'https://www.myntra.com/x/36340100/buy',
+      currentPrice: 650,
+      currency: '₹',
+      image: '',
+    });
+    expect(results.map((o) => o.store)).toEqual(['myntra.com', 'flipkart']);
+    expect(results[0].price).toBe(650);
+  });
+  it('excludes AL ADHEEM when discovering Love Drunk and keeps a genuine cross-store offer', async () => {
+    pages.amazon = [
+      offer(
+        'amazon',
+        'Blu C Chanel by AL ADHEEM Premium Long Lasting Perfume 100 ml',
+        1499,
+      ),
+      offer('amazon', 'BLA BLI BLU Love Drunk Perfume 100ml', 700),
+    ];
+    pages.flipkart = [
+      offer('flipkart', 'BLA BLI BLU Love Drunk Long Lasting Perfume 100 ml', 650),
+    ];
+    const { results } = await searchStores('BLA BLI BLU Love Drunk 100 ml', 'in');
+    expect(results).toHaveLength(1);
+    expect(results[0].offers).toHaveLength(2);
+    expect(results[0].best.price).toBe(650);
+    expect(results[0].offers.some((o) => o.title.includes('ADHEEM'))).toBe(false);
+    const hit = await searchStores('BLA BLI BLU Love Drunk 100 ml', 'in');
+    expect(hit.results[0].offers).toHaveLength(2);
+  });
   beforeEach(() => {
     for (const key of Object.keys(pages)) delete pages[key];
   });

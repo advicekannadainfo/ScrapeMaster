@@ -6,6 +6,7 @@ import ProductTile from '@/components/ui/ProductTile';
 import Sparkline from '@/components/ui/Sparkline';
 import type { Product } from '@/types';
 import { getDealVerdict } from '@/lib/deal';
+import { verifiedOffers } from '@/lib/verified-offers';
 
 export default function ProductCard({
   product,
@@ -19,7 +20,7 @@ export default function ProductCard({
     ...product,
     priceHistory: product.priceHistory ?? [],
   });
-  const cheaper = [...(product.offers ?? [])]
+  const cheaper = verifiedOffers(product)
     .filter((o) => o.store !== product.store && o.price < product.currentPrice)
     .sort((a, b) => a.price - b.price)[0];
 

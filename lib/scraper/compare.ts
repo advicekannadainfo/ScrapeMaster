@@ -1,14 +1,9 @@
 import 'server-only';
 import type { Offer, ScrapedProduct } from '@/types';
 import { loadAndParse } from './load';
-import {
-  isAccessory,
-  isPlausiblePrice,
-  MATCH_THRESHOLD,
-  searchQuery,
-  titleSimilarity,
-} from './match';
+import { isAccessory, isPlausiblePrice, searchQuery, titleSimilarity } from './match';
 import { regionFromCurrency, searchableStores } from './stores';
+import { isVerifiedMatch } from '@/lib/verified-offers';
 
 /**
  * Search every store that supports the product's region for the same item
@@ -36,8 +31,8 @@ export async function findOffers(
       const ranked = offers
         .map((offer) => ({ offer, score: titleSimilarity(product.title, offer.title) }))
         .filter(
-          ({ score, offer }) =>
-            score >= MATCH_THRESHOLD &&
+          ({ offer }) =>
+            isVerifiedMatch(product, offer) &&
             offer.currency === product.currency &&
             !isAccessory(offer.title, product.title) &&
             isPlausiblePrice(offer.price, product.currentPrice),

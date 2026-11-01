@@ -1,8 +1,9 @@
 import 'server-only';
 import type { Offer } from '@/types';
 import { loadAndParse } from './load';
-import { isAccessory, MATCH_THRESHOLD, titleSimilarity, tokenize } from './match';
+import { isAccessory, tokenize } from './match';
 import { searchableStores, type Region } from './stores';
+import { isVerifiedMatch, matchesDiscoveryQuery } from '@/lib/verified-offers';
 
 export type SearchResult = {
   title: string;
@@ -43,7 +44,13 @@ async function run(query: string, region: Region): Promise<SearchResponse> {
     .map((a) => a.name);
   const offers = settled
     .flatMap((r) => (r.status === 'fulfilled' ? r.value.slice(0, 20) : []))
-    .filter((o) => !isAccessory(o.title, query) && relevance(query, o.title) >= 0.5);
+    .filter(
+      (o) =>
+        Number.isFinite(o.price) &&
+        o.price > 0 &&
+        !isAccessory(o.title, query) &&
+        matchesDiscoveryQuery(query, o.title),
+    );
 
   // Group listings of the same product across stores.
   const groups: Offer[][] = [];
@@ -51,7 +58,9 @@ async function run(query: string, region: Region): Promise<SearchResponse> {
     const group = groups.find(
       (g) =>
         !g.some((o) => o.store === offer.store) &&
-        titleSimilarity(g[0].title, offer.title) >= MATCH_THRESHOLD &&
+        g.every(
+          (other) => other.currency === offer.currency && isVerifiedMatch(other, offer),
+        ) &&
         offer.price >= g[0].price * 0.5 &&
         offer.price <= g[0].price * 2,
     );
@@ -80,7 +89,7 @@ async function run(query: string, region: Region): Promise<SearchResponse> {
 
 /** Search every store that serves the region; results are cached briefly per query. */
 export function searchStores(query: string, region: Region) {
-  const key = `${region}:${query.trim().toLowerCase()}`;
+  const key = `verified-v1:${region}:${query.trim().toLowerCase()}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
 
