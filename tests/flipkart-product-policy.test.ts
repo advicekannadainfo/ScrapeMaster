@@ -110,24 +110,33 @@ describe('URL-based provider trust with supplementary cached Search evidence', (
       parse(descriptive, { product_results: { ...real.product_results, pid: 'OTHER' } }),
     ).toThrow(/identity conflicts/);
   });
-  it('does not cache any rows from partially invalid Search payloads', () => {
+  it('allows individually verified comparison rows but never caches evidence from a partially invalid Search batch', () => {
     const url = opaque('invalidbatch');
-    expect(() =>
-      parseFlipkartSearchAPI(
-        JSON.stringify({
-          search_results: [
-            {
-              title: real.product_results.title,
-              url,
-              product_id: 'EXAMPLEINVALIDBATCH',
-              price: 250,
-            },
-            { title: 'Invalid', url, product_id: 'WRONG', price: 1 },
-          ],
-        }),
-      ),
-    ).toThrow();
+    const offers = parseFlipkartSearchAPI(
+      JSON.stringify({
+        search_results: [
+          {
+            title: real.product_results.title,
+            url,
+            product_id: 'EXAMPLEINVALIDBATCH',
+            price: 250,
+          },
+          { title: 'Invalid', url, product_id: 'WRONG', price: 1 },
+        ],
+      }),
+    );
+    // A verified row may be used as a search candidate for a strict identity
+    // comparison. It must not corroborate an opaque product URL later.
+    expect(offers).toHaveLength(1);
+    expect(offers[0]).toMatchObject({
+      title: real.product_results.title,
+      storeProductId: 'EXAMPLEINVALIDBATCH',
+      price: 250,
+    });
     expect(cachedFlipkartSearch(url)).toBeUndefined();
+    // Without a cached corroboration, independently loading this opaque URL
+    // must still fail closed rather than trusting its request PID.
+    expect(() => parse(url)).toThrow(/corroboration/);
   });
   it('uses opt-in paid fallback and disables dedicated routing without a key', () => {
     vi.stubEnv('SCRAPINGDOG_API_KEY', 'offline-key');

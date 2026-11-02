@@ -3,6 +3,10 @@ import type { Offer, ScrapedProduct } from '@/types';
 import { isAccessory, isPlausiblePrice, titleSimilarity } from './match';
 import { regionFromCurrency, searchableStores } from './stores';
 import { isVerifiedMatch, comparisonSearchQuery } from '@/lib/verified-offers';
+import {
+  enrichSearchFragranceIdentity,
+  fragranceDiscoveryQuery,
+} from './product-candidate-match';
 import { discoverOffers } from './discovery';
 
 /**
@@ -24,7 +28,7 @@ export async function findOffersWithDiagnostics(
   >,
 ) {
   const region = regionFromCurrency(product.currency);
-  const query = comparisonSearchQuery(product.title);
+  const query = fragranceDiscoveryQuery(product) ?? comparisonSearchQuery(product.title);
   const stores = searchableStores(region).filter((store) => store.id !== product.store);
   const diagnostics: {
     store: string;
@@ -38,10 +42,19 @@ export async function findOffersWithDiagnostics(
     stores.map(async (adapter) => {
       const offers = await discoverOffers(adapter, query, region);
       const ranked = offers
-        .map((offer) => ({ offer, score: titleSimilarity(product.title, offer.title) }))
+        .map((original) => {
+          const offer = enrichSearchFragranceIdentity(product, original);
+          return {
+            offer,
+            score: titleSimilarity(product.title, offer.title),
+            // Only a strict title match OR explicit, independently checked
+            // brand/scent/title-size evidence may qualify a search result.
+            verified: isVerifiedMatch(product, offer) || offer !== original,
+          };
+        })
         .filter(
-          ({ offer }) =>
-            isVerifiedMatch(product, offer) &&
+          ({ offer, verified }) =>
+            verified &&
             offer.currency === product.currency &&
             !isAccessory(offer.title, product.title) &&
             isPlausiblePrice(offer.price, product.currentPrice),

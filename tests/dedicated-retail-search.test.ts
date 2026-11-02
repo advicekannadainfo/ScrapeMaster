@@ -73,13 +73,47 @@ describe('verified portions of dedicated retailer search (offline)', () => {
     for (const change of [
       { product_id: 'OTHER' },
       { price: 0 },
-      { price: '₹700' },
+      { price: '₹700 off' },
       { url: 'https://evil.example/p/item?pid=PERFUME100ML' },
     ]) {
       const changed = structuredClone(fixture);
       Object.assign(changed.search_results[0], change);
       expect(() => parseFlipkartSearchAPI(JSON.stringify(changed))).toThrow();
     }
+  });
+
+  it('accepts the documented Flipkart currency-price and pid-less product URLs', () => {
+    const documented = structuredClone(fixture);
+    documented.search_results[0].price = '₹34,990' as never;
+    documented.search_results[0].url = 'https://www.flipkart.com/love-drunk/p/itmexample';
+    documented.search_results[0].product_id = 'PERFUME100ML';
+    const offers = parseFlipkartSearchAPI(JSON.stringify(documented));
+    expect(offers).toHaveLength(1);
+    expect(offers[0]).toMatchObject({
+      store: 'flipkart',
+      price: 34990,
+      storeProductId: 'PERFUME100ML',
+      url: 'https://www.flipkart.com/love-drunk/p/itmexample?pid=PERFUME100ML',
+    });
+  });
+  it('skips an invalid search row when another verified row exists', () => {
+    const sample = structuredClone(fixture);
+    const bad = { ...sample.search_results[0], url: 'https://evil.example/p/itmexample' };
+    const results = { search_results: [bad, sample.search_results[0]] };
+    expect(parseFlipkartSearchAPI(JSON.stringify(results))).toHaveLength(1);
+    expect(() =>
+      parseFlipkartSearchAPI(JSON.stringify({ search_results: [bad] })),
+    ).toThrow(/no verifiable search rows/);
+  });
+  it('rejects conflicting pid, altered currency and malformed INR strings', () => {
+    for (const price of ['₹1,23', '$700', '₹700 discount', '₹0', '₹1,2,3']) {
+      const sample = structuredClone(fixture);
+      sample.search_results[0].price = price as never;
+      expect(() => parseFlipkartSearchAPI(JSON.stringify(sample))).toThrow();
+    }
+    const badPid = structuredClone(fixture);
+    badPid.search_results[0].url += '&pid=DIFFERENT';
+    expect(() => parseFlipkartSearchAPI(JSON.stringify(badPid))).toThrow();
   });
   it('distinguishes empty results from malformed/error payloads', () => {
     expect(parseFlipkartSearchAPI('{"search_results":[]}')).toEqual([]);

@@ -11,17 +11,30 @@ import { parseFlipkartAPIProduct } from './retail-product-json';
 import { flipkartProductInput } from '../retail-product-input';
 import { rememberFlipkartSearch } from '../flipkart-evidence';
 
-const dedicatedResults = z.object({
-  search_results: z.array(
-    z.object({
-      title: z.string().trim().min(1),
-      url: z.string().url(),
-      price: z.number().finite().positive(),
-      image: z.string().url().optional(),
-      product_id: z.string().trim().min(1),
-    }),
-  ),
+// ScrapingDog documents Flipkart prices as INR strings (e.g. "₹34,990")
+// and product URLs without a ?pid=, with product_id supplied separately.
+// Parse only unambiguous INR amounts, never free-text discounts or currencies.
+const INR_AMOUNT =
+  /^(?:[1-9]\d*|[1-9]\d{0,2}(?:,\d{3})+|[1-9]\d{0,2}(?:,\d{2})+,\d{3})(?:\.\d{1,2})?$/;
+const dedicatedPrice = z.preprocess((value) => {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return undefined;
+  const amount = value.trim().replace(/^(?:₹|INR)\s*/i, '');
+  if (!INR_AMOUNT.test(amount)) return undefined;
+  return Number(amount.replace(/,/g, ''));
+}, z.number().finite().positive());
+
+const dedicatedRow = z.object({
+  title: z.string().trim().min(1),
+  url: z.string().url(),
+  price: dedicatedPrice,
+  image: z.string().url().optional(),
+  product_id: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9]{5,32}$/i),
 });
+const dedicatedResults = z.object({ search_results: z.array(z.unknown()) });
 
 export function parseFlipkartSearchAPI(body: string): Offer[] {
   let raw: unknown;
@@ -30,40 +43,66 @@ export function parseFlipkartSearchAPI(body: string): Offer[] {
   } catch {
     throw new ScrapeError('Flipkart Search API returned invalid JSON', 'parse');
   }
-  const result = dedicatedResults.safeParse(raw);
-  if (!result.success)
+  const response = dedicatedResults.safeParse(raw);
+  if (!response.success)
     throw new ScrapeError(
       'Flipkart Search API returned unsupported or invalid search data',
       'parse',
     );
-  const offers = result.data.search_results.map((item) => {
+  let rejected = 0;
+  const offers: Offer[] = [];
+  for (const value of response.data.search_results) {
+    const row = dedicatedRow.safeParse(value);
+    if (!row.success) {
+      rejected++;
+      continue;
+    }
+    const item = row.data;
     const url = new URL(item.url);
+    const pids = url.searchParams.getAll('pid');
     if (
       url.protocol !== 'https:' ||
-      !/^(www\.)?flipkart\.com$/.test(url.hostname) ||
+      !/^(www\.)?flipkart\.com$/i.test(url.hostname) ||
       url.username ||
       url.password ||
       url.port ||
-      !url.pathname.includes('/p/') ||
-      url.searchParams.getAll('pid').length !== 1 ||
-      url.searchParams.get('pid') !== item.product_id
-    )
-      throw new ScrapeError(
-        'Flipkart search URL/product identifier cannot be verified',
-        'parse',
-      );
-    return {
+      !/\/p\/itm[a-z0-9]+\/?$/i.test(url.pathname) ||
+      pids.length > 1 ||
+      (pids.length === 1 && pids[0] !== item.product_id)
+    ) {
+      rejected++;
+      continue;
+    }
+    // A missing pid in a provider-documented URL is not a mismatch.
+    // Use the separate product_id from the same result as the canonical pid.
+    url.searchParams.set('pid', item.product_id);
+    offers.push({
       store: 'flipkart',
       storeName: 'Flipkart',
       title: item.title,
-      url: canonicalUrl(item.url),
+      url: canonicalUrl(url.toString()),
       price: item.price,
       currency: '₹',
       image: item.image,
       storeProductId: item.product_id,
-    };
-  });
-  rememberFlipkartSearch(offers);
+    });
+  }
+  if (rejected)
+    console.warn('[flipkart] Invalid search rows ignored', {
+      rejected,
+      total: response.data.search_results.length,
+    });
+  // All-invalid means an unsupported provider payload, not a confirmed empty catalog.
+  if (response.data.search_results.length && !offers.length)
+    throw new ScrapeError(
+      'Flipkart Search API returned no verifiable search rows',
+      'parse',
+    );
+  // Search results are individually verified for comparison, but supplementary
+  // product-page identity evidence is cached only from an entirely valid batch.
+  // A malformed row anywhere in the provider response makes that batch unsuitable
+  // as independent corroboration for later opaque product URLs.
+  if (rejected === 0) rememberFlipkartSearch(offers);
   return offers;
 }
 

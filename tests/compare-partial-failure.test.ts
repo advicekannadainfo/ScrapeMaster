@@ -56,6 +56,36 @@ describe('automatic comparison partial failures', () => {
     );
     expect(await findOffers(source)).toHaveLength(2);
   });
+  it('automatically discovers a same-scent Myntra listing with explicit 30ml title', async () => {
+    mocks.discover.mockImplementation((adapter: { id: string }, query: string) => {
+      expect(query).toBe('BLA BLI BLU love drunk 30ml');
+      return Promise.resolve(
+        adapter.id === 'myntra'
+          ? [
+              {
+                store: 'myntra.com',
+                storeName: 'Myntra',
+                title: 'BLA BLI BLU Love Drunk Long Lasting Perfume - 30ml',
+                brand: 'BLA BLI BLU',
+                url: 'https://www.myntra.com/perfume/bla-bli-blu/38312143/buy',
+                price: 225, // Synthetic test-only price.
+                currency: '₹',
+              },
+            ]
+          : [],
+      );
+    });
+    const result = await findOffersWithDiagnostics(source);
+    expect(result.offers.map((offer) => offer.store)).toContain('myntra.com');
+    expect(result.offers.find((offer) => offer.store === 'myntra.com')?.variant).toBe(
+      '30ml',
+    );
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ store: 'myntra', status: 'matched' }),
+      ]),
+    );
+  });
   it('does not throw when every store fails; returns source listing', async () => {
     mocks.discover.mockRejectedValue(new Error('temporary source failure'));
     expect((await findOffers(source)).map((offer) => offer.store)).toEqual(['amazon']);

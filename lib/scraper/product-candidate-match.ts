@@ -101,3 +101,67 @@ export function matchingFetchedFragrance(
   const candidateName = fragranceName(candidate.title, candidate.brand);
   return Boolean(sourceName && candidateName && sourceName === candidateName);
 }
+
+// Catalog results do not prove a selected SKU. For fragrance search only, an
+// explicit, unique quantity in the *listing title* can supply size evidence.
+// Do not infer sizes from catalog size arrays, prices, URLs or the source alone.
+const TITLE_VOLUME = /\b(\d+(?:\.\d+)?)\s*(ml|millilit(?:er|re)s?|l|lit(?:er|re)s?)\b/gi;
+
+function titleVolume(title: string): number | undefined {
+  const sizes = [...title.matchAll(TITLE_VOLUME)].map((match) =>
+    selectedVolume(`${match[1]} ${match[2]}`),
+  );
+  return sizes.length === 1 ? sizes[0] : undefined;
+}
+
+function concentration(title: string): string | undefined {
+  if (/\b(?:edt|eau\s+de\s+toilette)\b/i.test(title)) return 'edt';
+  if (/\b(?:edp|eau\s+de\s+parfum)\b/i.test(title)) return 'edp';
+  if (/\b(?:body\s+mist|body\s+spray|deodorant|attar|perfume\s+oil)\b/i.test(title))
+    return 'other';
+  return undefined;
+}
+
+/** Short discovery query for a known single-volume, named fragrance. */
+export function fragranceDiscoveryQuery(
+  source: ProductCandidateIdentity,
+): string | undefined {
+  if (!source.brand || !source.variant) return;
+  const size = selectedVolume(source.variant);
+  const name = fragranceName(source.title, source.brand);
+  if (
+    !size ||
+    !name ||
+    !/\b(perfume|parfum|fragrance)\b/i.test(source.title) ||
+    titleVolume(source.title) !== size ||
+    /\b(pack of|combo|bundle|set of|\d+\s*[x×]\s*\d+\s*ml)\b/i.test(source.title)
+  )
+    return;
+  return `${source.brand.trim()} ${name} ${size}ml`;
+}
+
+/**
+ * Search listings often omit brand/variant fields even when both appear in
+ * the title. Enrich ONLY when brand prefix, exact scent name and one explicit
+ * same-size volume are evidenced by that listing. No paid product fetch.
+ */
+export function enrichSearchFragranceIdentity<T extends ProductCandidateIdentity>(
+  source: ProductCandidateIdentity,
+  candidate: T,
+): T {
+  if (!source.brand || !source.variant || !candidate.title) return candidate;
+  if (candidate.brand && brandKey(candidate.brand) !== brandKey(source.brand))
+    return candidate;
+  const volume = titleVolume(candidate.title);
+  const selected = selectedVolume(source.variant);
+  if (!volume || volume !== selected || !fragranceName(candidate.title, source.brand))
+    return candidate;
+  // An EDP, EDT, attar, mist or deodorant cannot be silently substituted.
+  if (concentration(source.title) !== concentration(candidate.title)) return candidate;
+  const enriched = {
+    ...candidate,
+    brand: candidate.brand ?? source.brand,
+    variant: candidate.variant ?? `${volume}ml`,
+  };
+  return matchingFetchedFragrance(source, enriched) ? enriched : candidate;
+}
