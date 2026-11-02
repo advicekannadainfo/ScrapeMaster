@@ -34,6 +34,7 @@ export type Product = {
   watchers?: number;
   offers?: Offer[];
   offersCheckedAt?: string;
+  candidateLinksCheckedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -81,6 +82,7 @@ export type LiveProductUpdate = {
 
 export type Offer = {
   brand?: string;
+  variant?: string;
   /** Store-local identifier; never compare this to another store's identifier. */
   storeProductId?: string;
   store: string;

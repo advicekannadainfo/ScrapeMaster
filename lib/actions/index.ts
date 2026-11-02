@@ -7,7 +7,7 @@ import { connectDB } from '@/lib/db';
 import ProductModel from '@/lib/models/product.model';
 import { generateEmailBody, sendEmail } from '@/lib/nodemailer';
 import { ScrapeError } from '@/lib/scraper';
-import { updateOffers } from '@/lib/services/offers';
+import { updateOffers, verifyAndUpdateCandidateOffers } from '@/lib/services/offers';
 import { refreshProduct } from '@/lib/services/refresh';
 import { findTrackedId, trackProduct } from '@/lib/services/track';
 import { isValidProductURL } from '@/lib/utils';
@@ -178,5 +178,79 @@ export async function compareOffersNow(
   } catch (error) {
     console.error('[actions] compareOffersNow failed', error);
     return { ok: false, error: 'Could not compare stores right now.' };
+  }
+}
+
+const MANUAL_COMPARE_COOLDOWN_MS = 10 * 60_000;
+
+/** Manual product URLs use a separate persisted cooldown to protect paid credits. */
+export async function verifyProductLinksNow(
+  productId: string,
+  candidateLinks: string[],
+): Promise<ActionResult<{ count: number; verified: number; statuses: string[] }>> {
+  if (!/^[a-f\d]{24}$/i.test(productId)) return { ok: false, error: 'Invalid product' };
+  if (
+    !Array.isArray(candidateLinks) ||
+    candidateLinks.length < 1 ||
+    candidateLinks.length > 2 ||
+    candidateLinks.some((link) => {
+      if (typeof link !== 'string' || link.length > 2048 || !isValidProductURL(link))
+        return true;
+      try {
+        const u = new URL(link);
+        return (
+          u.protocol !== 'https:' ||
+          Boolean(u.username || u.password || u.port) ||
+          !/^(www\.)?(amazon\.in|flipkart\.com|myntra\.com)$/.test(u.hostname)
+        );
+      } catch {
+        return true;
+      }
+    })
+  )
+    return { ok: false, error: 'Enter one or two valid HTTPS product links.' };
+  try {
+    await connectDB();
+    const now = new Date();
+    // Atomic reservation: concurrent clicks cannot trigger duplicate paid calls.
+    const claimed = await ProductModel.findOneAndUpdate(
+      {
+        _id: productId,
+        $or: [
+          { candidateLinksCheckedAt: { $exists: false } },
+          {
+            candidateLinksCheckedAt: {
+              $lt: new Date(now.getTime() - MANUAL_COMPARE_COOLDOWN_MS),
+            },
+          },
+        ],
+      },
+      { $set: { candidateLinksCheckedAt: now } },
+      { projection: { _id: 1 } },
+    ).lean();
+    if (!claimed) {
+      if (!(await ProductModel.exists({ _id: productId })))
+        return { ok: false, error: 'Product not found' };
+      return {
+        ok: false,
+        error: 'Product links checked recently. Try again in 10 minutes.',
+      };
+    }
+    const result = await verifyAndUpdateCandidateOffers(productId, candidateLinks);
+    if (result.verified) revalidatePath(`/products/${productId}`);
+    return {
+      ok: true,
+      data: {
+        count: result.offers.length,
+        verified: result.verified,
+        statuses: result.diagnostics.map((d) => `${d.store}: ${d.status}`),
+      },
+    };
+  } catch (error) {
+    console.error('[actions] verifyProductLinksNow failed', error);
+    return {
+      ok: false,
+      error: 'Could not verify product links. Existing offers are unchanged.',
+    };
   }
 }

@@ -27,6 +27,11 @@ export default function OfferComparison({ product }: { product: Product }) {
               <>
                 Compared <RelativeTime date={product.offersCheckedAt} />
               </>
+            ) : product.candidateLinksCheckedAt ? (
+              <>
+                Product links checked{' '}
+                <RelativeTime date={product.candidateLinksCheckedAt} />
+              </>
             ) : (
               'Searching other stores for this product…'
             )}

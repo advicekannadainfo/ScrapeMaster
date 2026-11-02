@@ -17,6 +17,8 @@ const offerSchema = new mongoose.Schema(
   {
     store: { type: String, required: true },
     storeName: { type: String, required: true },
+    brand: String,
+    variant: String,
     title: { type: String, required: true },
     url: { type: String, required: true },
     price: { type: Number, required: true },
@@ -52,6 +54,7 @@ const productSchema = new mongoose.Schema(
     users: { type: [userSchema], default: [] },
     offers: { type: [offerSchema], default: [] },
     offersCheckedAt: Date,
+    candidateLinksCheckedAt: Date,
   },
   { timestamps: true },
 );

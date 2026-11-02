@@ -1,5 +1,6 @@
 import type { Offer } from '@/types';
 import { isAccessory, isPlausiblePrice } from './scraper/match';
+import { matchingFetchedFragrance } from './scraper/product-candidate-match';
 
 export type MatchIdentity = {
   title: string;
@@ -85,6 +86,17 @@ type Source = MatchIdentity & {
 };
 
 /** Recheck persisted offers at render time; never mutate the database or source. */
+/** Exact title checks for search; independently fetched same-size fragrance pages may
+ * additionally use explicit brand, selected variant and full scent-name evidence. */
+export function isVerifiedProductMatch(source: MatchIdentity, candidate: MatchIdentity) {
+  return (
+    isVerifiedMatch(source, candidate) ||
+    (!isAccessory(candidate.title, source.title) &&
+      !isAccessory(source.title, candidate.title) &&
+      matchingFetchedFragrance(source, candidate))
+  );
+}
+
 export function verifiedOffers(
   product: Source,
   candidates: Offer[] = product.offers ?? [],
@@ -110,7 +122,7 @@ export function verifiedOffers(
         );
       }
       return (
-        isVerifiedMatch(product, offer) &&
+        isVerifiedProductMatch(product, offer) &&
         isPlausiblePrice(offer.price, product.currentPrice)
       );
     })

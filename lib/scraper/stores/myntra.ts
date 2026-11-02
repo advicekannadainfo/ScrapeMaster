@@ -125,6 +125,9 @@ const realProduct = z.object({
   selectedSeller: z.object({
     sellerPartnerId: identifier,
     discountedPrice: money,
+    netQuantity: z
+      .array(z.object({ quantity: money, unit: z.string(), type: z.string().optional() }))
+      .optional(),
     discount: z
       .object({ discountId: z.string().nullable().optional() })
       .nullable()
@@ -273,10 +276,32 @@ function parseRealMyntraProduct(raw: unknown, url: string, id: string): ScrapedP
     })
     .find(Boolean);
   if (!image) fail('Myntra product image is missing or invalid');
+  const volumeFrom = (quantity: number, unit: string) => {
+    if (/^(ml|millilit(?:er|re)s?)$/i.test(unit)) return quantity;
+    if (/^(l|lit(?:er|re)s?)$/i.test(unit)) return quantity * 1000;
+    return undefined;
+  };
+  const titleVolumes = [
+    ...p.name.matchAll(
+      /\b(\d+(?:\.\d+)?)\s*(ml|millilit(?:er|re)s?|l|lit(?:er|re)s?)\b/gi,
+    ),
+  ].map((m) => volumeFrom(Number(m[1]), m[2]));
+  const netVolumes = seller.netQuantity?.map((q) => volumeFrom(q.quantity, q.unit)) ?? [];
+  const volumeCandidates = [...titleVolumes, ...netVolumes];
+  if (new Set(volumeCandidates).size > 1)
+    fail('Myntra title and selected seller quantity conflict');
+  const selectedVolume =
+    volumeCandidates.length === 1 ||
+    (volumeCandidates.length > 1 &&
+      volumeCandidates.every((v) => v === volumeCandidates[0]))
+      ? volumeCandidates[0]
+      : undefined;
   return {
     url,
     store: 'myntra.com',
     storeName: 'Myntra',
+    brand: p.brand.name,
+    variant: selectedVolume ? `${selectedVolume}ml` : undefined,
     title: p.name,
     currency: '₹',
     image: image!,
