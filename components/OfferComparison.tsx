@@ -6,6 +6,7 @@ import StoreLogo from '@/components/ui/StoreLogo';
 import type { Product } from '@/types';
 import { cn } from '@/lib/utils';
 import { verifiedOffers } from '@/lib/verified-offers';
+import { EXACT_OFFERS_UNVERIFIED } from '@/lib/product-presentation';
 
 export default function OfferComparison({ product }: { product: Product }) {
   const offers = verifiedOffers(product);
@@ -23,7 +24,9 @@ export default function OfferComparison({ product }: { product: Product }) {
             <Store className="size-4 text-accent" aria-hidden /> Best price across stores
           </h2>
           <p className="mt-1 text-xs text-muted">
-            {product.offersCheckedAt ? (
+            {product.comparisonIdentityVerified === false ? (
+              'Your product is tracked. Other-store offers need exact model and variant verification.'
+            ) : product.offersCheckedAt ? (
               <>
                 Compared <RelativeTime date={product.offersCheckedAt} />
               </>
@@ -86,9 +89,7 @@ export default function OfferComparison({ product }: { product: Product }) {
           ))}
         </ul>
       ) : (
-        <p className="mt-4 text-sm text-muted">
-          No verified match on other supported stores yet.
-        </p>
+        <p className="mt-4 text-sm text-muted">{EXACT_OFFERS_UNVERIFIED}</p>
       )}
     </section>
   );

@@ -1,3 +1,4 @@
+import { customerProductDescription } from '@/lib/product-presentation';
 import { productValidationDiagnostic } from '../product-validation-diagnostic';
 import { z } from 'zod';
 import { ScrapeError } from '../errors';
@@ -288,6 +289,7 @@ function flipkartModel(value: unknown): string | undefined {
 const realFlipkartSchema = z.object({
   product_results: z.object({
     title: text,
+    description: z.unknown().optional(),
     brand: text,
     price: rupees,
     previous_price: rupees.optional(),
@@ -449,6 +451,7 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
   }
   return {
     title: p.title,
+    description: customerProductDescription(p.description),
     brand: p.brand,
     model: general['Model Name'],
     sku: p.sku,
@@ -583,7 +586,7 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
       discountRate: p.originalPrice
         ? Math.round((1 - p.currentPrice / p.originalPrice) * 100)
         : 0,
-      description: `URL-based provider response; ${cached ? 'cached Search' : 'descriptive URL'} corroboration. Response SKU ${p.sku}; response PID not independently verified.`,
+      description: p.description,
       category: p.category,
       isOutOfStock: p.isOutOfStock,
       stars: p.stars,

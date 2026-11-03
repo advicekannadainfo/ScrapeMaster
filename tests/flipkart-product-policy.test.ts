@@ -56,7 +56,7 @@ describe('URL-based provider trust with supplementary cached Search evidence', (
       isOutOfStock: false,
     });
     expect(parse()).not.toHaveProperty('storeProductId');
-    expect(parse().description).toContain('response PID not independently verified');
+    expect(parse().description).not.toMatch(/response PID|Response SKU|corroboration/);
   });
   it('does not require SKU equality with request PID or claim that proves identity', () => {
     expect(
@@ -67,7 +67,7 @@ describe('URL-based provider trust with supplementary cached Search evidence', (
     const url = opaque('cached');
     cache(url);
     expect(parse(url).currentPrice).toBe(250); // Cached price 999 must not replace selected Product price.
-    expect(parse(url).description).toContain('cached Search');
+    expect(parse(url).description).not.toMatch(/cached Search|corroboration/);
   });
   it('requires semantic evidence, never request PID or SKU alone', () => {
     expect(() => parse(opaque('unknown'))).toThrow(/corroboration/);

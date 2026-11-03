@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { verifiedOffers } from '@/lib/verified-offers';
+import { customerProductDescription } from '@/lib/product-presentation';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { after } from 'next/server';
@@ -82,7 +83,10 @@ export default async function ProductPage({ params }: Props) {
   };
   const savings = product.originalPrice - product.currentPrice;
   const isLowest = history.length > 1 && product.currentPrice <= product.lowestPrice;
-  const bullets = product.description?.split('\n').filter(Boolean).slice(0, 8) ?? [];
+  const bullets = customerProductDescription(product.description)
+    .split('\n')
+    .filter(Boolean)
+    .slice(0, 8);
 
   return (
     <LiveProvider productIds={[product._id, ...similar.map((p) => p._id)]}>
