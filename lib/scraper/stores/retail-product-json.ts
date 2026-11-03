@@ -154,6 +154,26 @@ const flipkartSchema = z.object({
 });
 
 const numericText = text.regex(/^\d+(?:\.\d+)?$/).transform(Number);
+export const MAX_FLIPKART_VARIANTS = 50;
+
+/** Only the documented string contract is established. Do not unwrap unknown
+ * arrays/objects or substitute title/URL words for missing response-side model. */
+function flipkartModel(value: unknown): string {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  const shape =
+    value === undefined
+      ? 'missing'
+      : value === null
+        ? 'null'
+        : Array.isArray(value)
+          ? `array; length=${value.length}; elementTypes=${[...new Set(value.slice(0, 5).map((entry) => (entry === null ? 'null' : Array.isArray(entry) ? 'array' : typeof entry)))].join(',')}`
+          : typeof value === 'string'
+            ? 'empty-string'
+            : typeof value;
+  return fail(
+    `Flipkart product_results.specifications.General.Model Name: unsupported model representation (observed=${shape}); nonempty string evidence required`,
+  );
+}
 const realFlipkartSchema = z.object({
   product_results: z.object({
     title: text,
@@ -173,7 +193,7 @@ const realFlipkartSchema = z.object({
       General: z
         .object({
           Brand: text.optional(),
-          'Model Name': text,
+          'Model Name': z.unknown(),
           Quantity: text.optional(),
           'Net Quantity': text.optional(),
         })
@@ -181,7 +201,8 @@ const realFlipkartSchema = z.object({
       'Product Highlights': z.object({ Quantity: text }).optional(),
     }),
     highlights: z.array(text).default([]),
-    variants: z.array(z.unknown()).max(0).default([]),
+    // Alternative listings are a bounded opaque catalog, never selected evidence.
+    variants: z.array(z.unknown()).max(MAX_FLIPKART_VARIANTS).default([]),
     display_sizes: z.array(z.unknown()).max(0).default([]),
   }),
 });
@@ -202,7 +223,8 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
         .join('; ')}`,
     );
   const p = result.data.product_results;
-  const general = p.specifications.General;
+  const model = flipkartModel(p.specifications.General['Model Name']);
+  const general = { ...p.specifications.General, 'Model Name': model };
   const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (
     (general.Brand !== undefined && compact(p.brand) !== compact(general.Brand)) ||
@@ -239,6 +261,25 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
         ? 'Flipkart selected quantity format is unsupported'
         : 'Flipkart selected attribute conflicts with title',
     );
+  }
+  if (p.variants.length) {
+    // A populated variants catalog proves neither selection nor colour. Require
+    // colour independently printed in both the main title and selected General
+    // specifications. Root price/stock/SKU/model validation remains mandatory.
+    const colours = [
+      (general as Record<string, string>).Color,
+      (general as Record<string, string>).Colour,
+    ].filter((value): value is string => value !== undefined);
+    const printedColour = titleAttributes(p.title).colour;
+    if (
+      !printedColour ||
+      printedColour.includes('/') ||
+      !colours.length ||
+      colours.some((value) => value.trim().toLowerCase() !== printedColour)
+    )
+      fail(
+        'Flipkart selected variant identity is ambiguous: nonempty variants require independent main-product colour evidence',
+      );
   }
   const quantities = [
     general.Quantity,
