@@ -18,7 +18,7 @@ describe('Myntra Product API parser (synthetic documented-shape fixture)', () =>
       reviewsCount: 1164,
       image: fixture.product_results.images[0],
       isOutOfStock: false,
-      description: 'Myntra product 31076617. Price for size: 28.',
+      description: 'Product description is not available yet.',
     });
   });
   it('rejects a missing selling price instead of returning zero or MRP', () => {
@@ -53,8 +53,7 @@ describe('Myntra Product API parser (synthetic documented-shape fixture)', () =>
       currentPrice: 1159,
       originalPrice: 1159,
       comparisonIdentityVerified: false,
-      description:
-        'Myntra product 31076617. No selected size; price common to available sizes.',
+      description: 'Product description is not available yet.',
     });
   });
   it('treats zero stock as unavailable even if available is true', () => {

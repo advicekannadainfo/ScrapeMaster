@@ -18,7 +18,7 @@ describe('real Myntra response (sanitized user-provided fixture; offline)', () =
       category: 'BLA BLI BLU',
       isOutOfStock: false,
       reviewsCount: 10223,
-      description: 'Myntra product 36340100. Seller 45834, SKU 116095841.',
+      description: 'Product description is not available yet.',
     });
     expect(result.stars).toBeCloseTo(4.56, 2);
     expect(result.image).toMatch(/^https:\/\/assets\.myntassets\.com\/assets\/images\//);

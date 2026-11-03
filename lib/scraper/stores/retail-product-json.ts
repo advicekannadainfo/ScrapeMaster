@@ -1,4 +1,4 @@
-import { customerProductDescription } from '@/lib/product-presentation';
+import { mainProductDescription } from '@/lib/product-presentation';
 import { productValidationDiagnostic } from '../product-validation-diagnostic';
 import { z } from 'zod';
 import { ScrapeError } from '../errors';
@@ -12,6 +12,8 @@ const text = z.string().trim().min(1);
 const positive = z.number().finite().positive();
 const amazonSchema = z.object({
   title: text,
+  description: z.unknown().optional(),
+  feature_bullets: z.unknown().optional(),
   main_title: text.optional(),
   product_information: z.object({
     ASIN: z.string().regex(/^[a-z0-9]{10}$/i),
@@ -157,7 +159,7 @@ export function parseAmazonAPIProduct(body: string, input: string): ScrapedProdu
     currentPrice: p.extracted_price,
     originalPrice: p.extracted_price,
     discountRate: 0,
-    description: `Amazon ASIN ${target.asin}. Validated main-product price.`,
+    description: mainProductDescription(p.description, p.feature_bullets),
     category: 'General',
     isOutOfStock: !available,
     stars: p.extracted_average_rating ?? 0,
@@ -316,7 +318,7 @@ const realFlipkartSchema = z.object({
         'Product Highlights': z.object({ Quantity: text }).optional(),
       })
       .default({}),
-    highlights: z.array(text).default([]),
+    highlights: z.unknown().optional(),
     // Alternative listings are a bounded opaque catalog, never selected evidence.
     variants: z.array(z.unknown()).max(MAX_FLIPKART_VARIANTS).default([]),
     display_sizes: z.array(z.unknown()).max(MAX_FLIPKART_VARIANTS).default([]),
@@ -424,8 +426,15 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
     general.Quantity,
     general['Net Quantity'],
     p.specifications['Product Highlights']?.Quantity,
-    ...p.highlights
-      .filter((s) => /^Quantity:/i.test(s))
+    ...(Array.isArray(p.highlights)
+      ? p.highlights.filter((value): value is string => typeof value === 'string')
+      : []
+    )
+      .filter((s) =>
+        /^Quantity:\s*\d+(?:\.\d+)?\s*(?:ml|millilitres?|milliliters?|l|litres?|liters?)$/i.test(
+          s.trim(),
+        ),
+      )
       .map((s) => s.replace(/^Quantity:\s*/i, '')),
     ...[
       ...p.title.matchAll(
@@ -451,7 +460,7 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
   }
   return {
     title: p.title,
-    description: customerProductDescription(p.description),
+    description: mainProductDescription(p.description, p.highlights),
     brand: p.brand,
     model: general['Model Name'],
     sku: p.sku,

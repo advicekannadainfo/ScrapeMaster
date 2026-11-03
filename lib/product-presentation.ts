@@ -17,3 +17,43 @@ export function customerProductDescription(value: unknown): string {
     return DESCRIPTION_UNAVAILABLE;
   return text;
 }
+
+/** Main-product fields only. Objects/nested lists are deliberately unsupported. */
+export function mainProductDescription(...sources: unknown[]): string {
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  let length = 0;
+  for (const source of sources) {
+    const items =
+      typeof source === 'string'
+        ? [source]
+        : Array.isArray(source)
+          ? source.slice(0, 32)
+          : [];
+    for (const item of items) {
+      if (typeof item !== 'string' || item.length > 12000) continue;
+      for (const raw of item.split(/\r?\n/).slice(0, 32)) {
+        const line = raw
+          .trim()
+          .replace(/^(?:[•*]|-)\s+/, '')
+          .replace(/[\t ]+/g, ' ');
+        if (
+          line.length > 1500 ||
+          customerProductDescription(line) === DESCRIPTION_UNAVAILABLE
+        )
+          continue;
+        const key = line
+          .normalize('NFKC')
+          .toLowerCase()
+          .replace(/[.。]+$/, '');
+        if (seen.has(key)) continue;
+        if (lines.length >= 8 || length + line.length + lines.length > 6000)
+          return lines.join('\n');
+        seen.add(key);
+        lines.push(line);
+        length += line.length;
+      }
+    }
+  }
+  return lines.join('\n') || DESCRIPTION_UNAVAILABLE;
+}

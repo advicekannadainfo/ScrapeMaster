@@ -1,3 +1,4 @@
+import { mainProductDescription } from '@/lib/product-presentation';
 import { productValidationDiagnostic } from '../product-validation-diagnostic';
 import { normalizedValue, categoryFor } from '../product-identity';
 import * as cheerio from 'cheerio';
@@ -101,6 +102,7 @@ const optionalBrand = z
 const brandName = (value: z.infer<typeof optionalBrand>) =>
   typeof value === 'string' ? value : value?.name;
 const apiProduct = z.object({
+  product_details: z.unknown().optional(),
   productId: z.union([z.string(), z.number()]).transform(String),
   name: z.string().trim().min(1),
   brand: optionalBrand,
@@ -125,6 +127,7 @@ const identifier = z
   .union([z.string().regex(/^\d+$/), z.number().int().positive()])
   .transform(String);
 const realProduct = z.object({
+  product_details: z.unknown().optional(),
   id: identifier,
   name: z.string().trim().min(1),
   brand: optionalBrand,
@@ -376,7 +379,7 @@ function parseRealMyntraProduct(raw: unknown, url: string, id: string): ScrapedP
     originalPrice: mrp,
     discountRate: Math.round(((mrp - price) / mrp) * 100),
     category: brandName(p.brand) ?? 'General',
-    description: `Myntra product ${id}. Seller ${seller.sellerPartnerId}, SKU ${sku}.`,
+    description: mainProductDescription(p.product_details),
     stars: p.ratings?.averageRating ?? 0,
     reviewsCount: p.ratings?.reviewInfo?.reviewsCount ?? 0,
     isOutOfStock: counts.some((n) => n === 0),
@@ -507,10 +510,7 @@ export function parseMyntraAPIProduct(body: string, url: string): ScrapedProduct
     originalPrice: original,
     discountRate: Math.round(((original - price) / original) * 100),
     category: brand || 'General',
-    description:
-      available.length === 1
-        ? `Myntra product ${id}. Price for size: ${selected.label}.`
-        : `Myntra product ${id}. No selected size; price common to available sizes.`,
+    description: mainProductDescription(product.product_details),
     isOutOfStock: false,
     stars: product.overall_rating ?? 0,
     reviewsCount: product.ratings_count ?? 0,
