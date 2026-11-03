@@ -30,6 +30,7 @@ export async function findOffersWithDiagnostics(
     | 'image'
     | 'brand'
     | 'variant'
+    | 'comparisonIdentityVerified'
   >,
 ) {
   const region = regionFromCurrency(product.currency);
@@ -55,6 +56,7 @@ export async function findOffersWithDiagnostics(
             // Only a strict title match OR explicit, independently checked
             // brand/scent/title-size evidence may qualify a search result.
             verified:
+              product.comparisonIdentityVerified !== false &&
               compatibleAttributes(product, offer) &&
               identityFieldsAgree(product, offer) &&
               (isVerifiedMatch(product, offer) || offer !== original),

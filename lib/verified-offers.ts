@@ -4,6 +4,7 @@ import { isAccessory, isPlausiblePrice } from './scraper/match';
 import { matchingFetchedFragrance } from './scraper/product-candidate-match';
 
 export type MatchIdentity = {
+  comparisonIdentityVerified?: boolean;
   title: string;
   brand?: string;
   model?: string;
@@ -64,6 +65,11 @@ export function comparisonSearchQuery(title: string) {
 
 /** Conservative title evidence. Missing details do not prove an exact match. */
 export function isVerifiedMatch(source: MatchIdentity, candidate: MatchIdentity) {
+  if (
+    source.comparisonIdentityVerified === false ||
+    candidate.comparisonIdentityVerified === false
+  )
+    return false;
   if (!compatibleAttributes(source, candidate)) return false;
   for (const key of ['brand', 'model', 'variant', 'gtin', 'mpn'] as const) {
     if (
@@ -105,6 +111,11 @@ type Source = MatchIdentity & {
 /** Exact title checks for search; independently fetched same-size fragrance pages may
  * additionally use explicit brand, selected variant and full scent-name evidence. */
 export function isVerifiedProductMatch(source: MatchIdentity, candidate: MatchIdentity) {
+  if (
+    source.comparisonIdentityVerified === false ||
+    candidate.comparisonIdentityVerified === false
+  )
+    return false;
   if (!identityFieldsAgree(source, candidate)) return false;
   return (
     isVerifiedMatch(source, candidate) ||

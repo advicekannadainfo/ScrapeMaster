@@ -43,7 +43,6 @@ describe('focused Flipkart model/variants compatibility, offline only', () => {
   });
   it.each(
     [
-      undefined,
       null,
       42,
       {},
@@ -84,7 +83,8 @@ describe('focused Flipkart model/variants compatibility, offline only', () => {
   it('does not infer model from title, request URL or catalog contents', () => {
     const p = contract();
     Reflect.deleteProperty(p.product_results.specifications.General, 'Model Name');
-    expect(() => parse(p)).toThrow(/nonempty string evidence required/);
+    expect(parse(p).comparisonIdentityVerified).toBe(false);
+    expect(parse(p)).not.toHaveProperty('model');
   });
   it('ignores catalog prices, selections and IDs even when their values look usable', () => {
     const p = contract();

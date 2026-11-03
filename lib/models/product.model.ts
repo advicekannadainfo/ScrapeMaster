@@ -35,6 +35,7 @@ const productSchema = new mongoose.Schema(
     storeName: { type: String, default: 'Amazon' },
     brand: String,
     storeProductId: String,
+    comparisonIdentityVerified: Boolean,
     variant: String,
     currency: { type: String, required: true },
     image: { type: String, required: true },

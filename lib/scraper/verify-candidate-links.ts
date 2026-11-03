@@ -13,12 +13,23 @@ export type LinkResult = { store: string; status: 'verified' | 'rejected' | 'fai
 export async function verifyCandidateLinks(
   source: Pick<
     ScrapedProduct,
-    'title' | 'brand' | 'variant' | 'currency' | 'currentPrice' | 'store'
+    | 'title'
+    | 'brand'
+    | 'variant'
+    | 'currency'
+    | 'currentPrice'
+    | 'store'
+    | 'comparisonIdentityVerified'
   >,
   links: string[],
 ): Promise<{ offers: Offer[]; diagnostics: LinkResult[] }> {
   if (links.length > MAX_CANDIDATE_LINKS)
     throw new Error('Maximum two candidate links per check');
+  if (source.comparisonIdentityVerified === false)
+    return {
+      offers: [],
+      diagnostics: links.map(() => ({ store: 'unknown', status: 'rejected' as const })),
+    };
   const seen = new Set<string>();
   const tasks = links.map(
     async (input): Promise<{ offer?: Offer; result: LinkResult }> => {

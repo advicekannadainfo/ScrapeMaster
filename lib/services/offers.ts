@@ -14,12 +14,15 @@ export const OFFERS_TTL_MS = 24 * 60 * 60 * 1000;
 /** Existing automatic discovery route stays unchanged. */
 export async function updateOffers(id: string) {
   const product = await ProductModel.findById(id)
-    .select('title currency store storeName url currentPrice image brand variant')
+    .select(
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified',
+    )
     .lean();
   if (!product) return [];
   const discovered = await findOffers({
     ...product,
     image: product.image ?? undefined,
+    comparisonIdentityVerified: product.comparisonIdentityVerified ?? undefined,
     brand: product.brand ?? undefined,
     variant: product.variant ?? undefined,
   });
@@ -27,13 +30,14 @@ export async function updateOffers(id: string) {
   // but only while their separate last-check timestamp is still fresh.
   const latest = await ProductModel.findById(id)
     .select(
-      'title currency store storeName url currentPrice image brand variant offers candidateLinksCheckedAt',
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified offers candidateLinksCheckedAt',
     )
     .lean();
-  if (!latest) return discovered;
+  if (!latest || latest.comparisonIdentityVerified === false) return discovered;
   const source = {
     ...latest,
     image: latest.image ?? undefined,
+    comparisonIdentityVerified: latest.comparisonIdentityVerified ?? undefined,
     brand: latest.brand ?? undefined,
     variant: latest.variant ?? undefined,
     // Mongoose lean offers may contain nullable brand/variant/image; normalize
@@ -73,6 +77,7 @@ export async function updateOffers(id: string) {
 export function mergeVerifiedCandidateOffers(
   product: {
     title: string;
+    comparisonIdentityVerified?: boolean;
     brand?: string;
     variant?: string;
     store: string;
@@ -115,12 +120,15 @@ export async function verifyAndUpdateCandidateOffers(
   if (!links.length || links.length > MAX_CANDIDATE_LINKS)
     throw new Error('Enter one or two candidate links');
   const product = await ProductModel.findById(id)
-    .select('title currency store storeName url currentPrice image brand variant')
+    .select(
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified',
+    )
     .lean();
   if (!product) throw new Error('Product not found');
   const source = {
     ...product,
     image: product.image ?? undefined,
+    comparisonIdentityVerified: product.comparisonIdentityVerified ?? undefined,
     brand: product.brand ?? undefined,
     variant: product.variant ?? undefined,
   };
@@ -130,13 +138,16 @@ export async function verifyAndUpdateCandidateOffers(
     return { offers: [], verified: 0, diagnostics: checked.diagnostics };
   // Reload after paid work so we preserve any automatic offers saved concurrently.
   const latest = await ProductModel.findById(id)
-    .select('title currency store storeName url currentPrice image brand variant offers')
+    .select(
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified offers',
+    )
     .lean();
   if (!latest) throw new Error('Product not found');
   const offers = mergeVerifiedCandidateOffers(
     {
       ...latest,
       image: latest.image ?? undefined,
+      comparisonIdentityVerified: latest.comparisonIdentityVerified ?? undefined,
       brand: latest.brand ?? undefined,
       variant: latest.variant ?? undefined,
       offers: latest.offers.map((o) => ({

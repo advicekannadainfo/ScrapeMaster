@@ -8,6 +8,7 @@ export type User = {
 };
 
 export type Product = {
+  comparisonIdentityVerified?: boolean;
   brand?: string;
   storeProductId?: string;
   variant?: string;

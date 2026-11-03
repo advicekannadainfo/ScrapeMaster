@@ -4,7 +4,7 @@ import { amazonIndiaProductInput, flipkartProductInput } from '../retail-product
 import type { ScrapedProduct } from '@/types';
 import { cachedFlipkartSearch } from '../flipkart-evidence';
 import { categoryFor, selectedAttributes, titleAttributes } from '../product-identity';
-import { isVerifiedMatch } from '@/lib/verified-offers';
+import { isVerifiedMatch, comparisonSearchQuery } from '@/lib/verified-offers';
 
 const text = z.string().trim().min(1);
 const positive = z.number().finite().positive();
@@ -156,9 +156,90 @@ const flipkartSchema = z.object({
 const numericText = text.regex(/^\d+(?:\.\d+)?$/).transform(Number);
 export const MAX_FLIPKART_VARIANTS = 50;
 
+/** Structural diagnostics only. Raw provider keys/values are never logged. */
+function logMissingFlipkartModel(raw: unknown) {
+  const object = (value: unknown): Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const type = (value: unknown) =>
+    value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+  const root = object(object(raw).product_results);
+  const specs = object(root.specifications);
+  const groups: Record<string, string> = {
+    general: 'General',
+    producthighlights: 'Product Highlights',
+    technicaldetails: 'Technical Details',
+    productdetails: 'Product Details',
+    audiofeatures: 'Audio Features',
+    connectivityfeatures: 'Connectivity Features',
+    dimensions: 'Dimensions',
+    warranty: 'Warranty',
+    features: 'Features',
+    technicalspecifications: 'Technical Specifications',
+  };
+  const models: Record<string, string> = {
+    modelname: 'Model Name',
+    modelnumber: 'Model Number',
+    modelno: 'Model No',
+    modelid: 'Model ID',
+    productname: 'Product Name',
+    productmodel: 'Product Model',
+    series: 'Series',
+    seriesname: 'Series Name',
+    model: 'Model',
+    name: 'Name',
+  };
+  const key = (name: string) => name.toLowerCase().replace(/[^a-z]/g, '');
+  const entries = Object.entries(specs);
+  const specificationGroups = entries.slice(0, 12).map(([name, value]) => ({
+    group: Object.hasOwn(groups, key(name)) ? groups[key(name)] : '[redacted group]',
+    type: type(value),
+    modelFields: Object.entries(object(value))
+      .slice(0, 40)
+      .filter(([field]) => Object.hasOwn(models, key(field)))
+      .slice(0, 10)
+      .map(([field, item]) => ({ field: models[key(field)], type: type(item) })),
+  }));
+  const general = object(specs.General);
+  const alternativeMainIdentity = [
+    'model',
+    'model_name',
+    'model_number',
+    'model_id',
+    'product_id',
+    'pid',
+    'sku',
+    'url',
+    'canonical_url',
+    'brand',
+    'title',
+  ].map((field) => ({
+    field,
+    present: Object.hasOwn(root, field),
+    type: type(root[field]),
+  }));
+  console.warn('[flipkart] Missing Model Name structural diagnostic', {
+    specificationGroups,
+    groupsTruncated: entries.length > 12,
+    fieldInspectionLimit: 40,
+    selectedColourEvidence: {
+      titleHasRecognizedColour:
+        typeof root.title === 'string' && Boolean(titleAttributes(root.title).colour),
+      general: ['Color', 'Colour'].map((field) => ({
+        field,
+        present: Object.hasOwn(general, field),
+        type: type(general[field]),
+      })),
+    },
+    alternativeMainIdentity,
+  });
+}
+
 /** Only the documented string contract is established. Do not unwrap unknown
  * arrays/objects or substitute title/URL words for missing response-side model. */
-function flipkartModel(value: unknown): string {
+function flipkartModel(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
   if (typeof value === 'string' && value.trim()) return value.trim();
   const shape =
     value === undefined
@@ -189,21 +270,24 @@ const realFlipkartSchema = z.object({
         ratings_count: numericText.refine(Number.isInteger).optional(),
       })
       .optional(),
-    specifications: z.object({
-      General: z
-        .object({
-          Brand: text.optional(),
-          'Model Name': z.unknown(),
-          Quantity: text.optional(),
-          'Net Quantity': text.optional(),
-        })
-        .catchall(z.string()),
-      'Product Highlights': z.object({ Quantity: text }).optional(),
-    }),
+    specifications: z
+      .object({
+        General: z
+          .object({
+            Brand: text.optional(),
+            'Model Name': z.unknown(),
+            Quantity: text.optional(),
+            'Net Quantity': text.optional(),
+          })
+          .catchall(z.unknown())
+          .default({}),
+        'Product Highlights': z.object({ Quantity: text }).optional(),
+      })
+      .default({}),
     highlights: z.array(text).default([]),
     // Alternative listings are a bounded opaque catalog, never selected evidence.
     variants: z.array(z.unknown()).max(MAX_FLIPKART_VARIANTS).default([]),
-    display_sizes: z.array(z.unknown()).max(0).default([]),
+    display_sizes: z.array(z.unknown()).max(MAX_FLIPKART_VARIANTS).default([]),
   }),
 });
 
@@ -223,13 +307,14 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
         .join('; ')}`,
     );
   const p = result.data.product_results;
+  if (p.specifications.General['Model Name'] === undefined) logMissingFlipkartModel(raw);
   const model = flipkartModel(p.specifications.General['Model Name']);
   const general = { ...p.specifications.General, 'Model Name': model };
   const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (
     (general.Brand !== undefined && compact(p.brand) !== compact(general.Brand)) ||
     !compact(p.title).startsWith(compact(p.brand)) ||
-    !compact(p.title).includes(compact(general['Model Name']))
+    (model !== undefined && !compact(p.title).includes(compact(model)))
   )
     fail('Flipkart brand/model identity fields conflict');
   if (p.previous_price !== undefined && p.previous_price < p.price)
@@ -254,7 +339,33 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
   const category = categoryFor(p.title);
   let attributes: Record<string, string>;
   try {
-    attributes = selectedAttributes(p.title, general as Record<string, string>);
+    const selected = Object.fromEntries(
+      Object.entries(general).filter(([key]) =>
+        [
+          'Brand',
+          'Color',
+          'Colour',
+          'Quantity',
+          'Net Quantity',
+          'Size',
+          'Storage',
+          'Capacity',
+          'RAM',
+          'Processor',
+          'Processor Name',
+          'Model Number',
+          'Pack Size',
+          'ISBN',
+          'ISBN-10',
+          'ISBN-13',
+          'Edition',
+          'Language',
+        ].includes(key),
+      ),
+    );
+    if (Object.values(selected).some((value) => typeof value !== 'string'))
+      fail('Flipkart selected specification representation is unsupported');
+    attributes = selectedAttributes(p.title, selected as Record<string, string>);
   } catch (error) {
     return fail(
       error instanceof Error && error.message.includes('unsupported')
@@ -262,7 +373,7 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
         : 'Flipkart selected attribute conflicts with title',
     );
   }
-  if (p.variants.length) {
+  if (p.variants.length || p.display_sizes.length) {
     // A populated variants catalog proves neither selection nor colour. Require
     // colour independently printed in both the main title and selected General
     // specifications. Root price/stock/SKU/model validation remains mandatory.
@@ -331,6 +442,7 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
     stars: p.ratings_reviews?.rating ?? 0,
     reviewsCount: p.ratings_reviews?.ratings_count ?? 0,
     requestedIdentityVerified: false as const,
+    comparisonIdentityVerified: model !== undefined,
   };
 }
 
@@ -369,7 +481,7 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
         ' ',
       ),
     );
-    const modelWords = p.model
+    const modelWords = (p.model ?? '')
       .toLowerCase()
       .split(/[^a-z0-9]+/)
       .filter((w) => w.length > 1 && !noise.has(w));
@@ -387,7 +499,27 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
     ].map((m) => `${volume(m[0])}ml`);
     if (slugVolumes.some((v) => v !== p.variant))
       fail('Flipkart request URL quantity conflicts with response');
-    if (!cached && !slugEvidence)
+    const titleWords = comparisonSearchQuery(p.title)
+      .split(' ')
+      .filter(
+        (word) =>
+          !comparisonSearchQuery(p.brand).split(' ').includes(word) &&
+          !titleAttributes(word).colour,
+      );
+    const titleContext =
+      compact(slug).includes(compact(p.brand)) &&
+      new Set(titleWords).size >= 2 &&
+      titleWords.every((word) => slugWords.has(word));
+    const original = (readJSON(body) as { product_results: Record<string, unknown> })
+      .product_results;
+    const responseBound = ['pid', 'product_id', 'url', 'canonical_url'].some(
+      (key) => original[key] !== undefined,
+    );
+    if (!p.model && !cached && !titleContext && !responseBound)
+      fail(
+        'Flipkart tracking identity is ambiguous: missing Model Name requires main-product URL/title or explicit response identity corroboration; observed=missing; nonempty string evidence required for model verification',
+      );
+    if (p.model && !cached && !slugEvidence)
       fail(
         'Flipkart request URL needs brand/model corroboration from its descriptive slug or cached Search result; SKU is not proof of PID',
       );
@@ -397,6 +529,7 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
       storeName: 'Flipkart',
       title: p.title,
       brand: p.brand,
+      comparisonIdentityVerified: p.comparisonIdentityVerified,
       variant: p.variant,
       image: p.image,
       currency: p.currency,
