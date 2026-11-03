@@ -1,4 +1,4 @@
-import { compatibleAttributes, titleAttributes } from './product-identity';
+import { compatibleAttributes, titleAttributes, categoryFor } from './product-identity';
 import 'server-only';
 import type { Offer, ScrapedProduct } from '@/types';
 import { isAccessory, isPlausiblePrice, titleSimilarity } from './match';
@@ -7,12 +7,13 @@ import {
   isVerifiedMatch,
   comparisonSearchQuery,
   identityFieldsAgree,
+  verifiedOffers,
 } from '@/lib/verified-offers';
 import {
   enrichSearchFragranceIdentity,
   fragranceDiscoveryQuery,
 } from './product-candidate-match';
-import { discoverOffers } from './discovery';
+import { discoverOffers, type DiscoveryObservation } from './discovery';
 
 /**
  * Search every store that supports the product's region for the same item
@@ -43,53 +44,72 @@ export async function findOffersWithDiagnostics(
     candidates: number;
     verified: number;
     reason?: string;
+    sourceEvidence?:
+      'eligible' | 'selected-volume-unconfirmed' | 'selected-identity-unconfirmed';
+    discovery?: DiscoveryObservation;
+    rejections?: Record<string, number>;
   }[] = [];
 
   const results = await Promise.allSettled(
     stores.map(async (adapter) => {
-      const offers = await discoverOffers(adapter, query, region);
+      let discovery: DiscoveryObservation | undefined;
+      const offers = await discoverOffers(adapter, query, region, undefined, (result) => {
+        discovery = result;
+      });
+      const rejections: Record<string, number> = {};
+      const sourceEvidence =
+        product.comparisonIdentityVerified !== false
+          ? 'eligible'
+          : categoryFor(product.title) === 'perfume' && product.brand && !product.variant
+            ? 'selected-volume-unconfirmed'
+            : 'selected-identity-unconfirmed';
       const ranked = offers
-        .map((original) => {
+        .flatMap((original) => {
           const offer = enrichSearchFragranceIdentity(product, original);
-          return {
-            offer,
-            score: titleSimilarity(product.title, offer.title),
-            // Only a strict title match OR explicit, independently checked
-            // brand/scent/title-size evidence may qualify a search result.
-            verified:
-              product.comparisonIdentityVerified !== false &&
-              compatibleAttributes(product, offer) &&
-              identityFieldsAgree(product, offer) &&
-              (isVerifiedMatch(product, offer) || offer !== original),
-          };
+          const a = titleAttributes(`${product.title} ${product.variant ?? ''}`);
+          const b = titleAttributes(`${offer.title} ${offer.variant ?? ''}`);
+          const conflict =
+            !identityFieldsAgree(product, offer) ||
+            Object.entries(a).some(([key, value]) => b[key] && b[key] !== value);
+          const reason =
+            product.comparisonIdentityVerified === false
+              ? 'insufficient-selected-identity'
+              : [a.concentration, b.concentration].some((value) => value?.includes('/'))
+                ? 'ambiguous-concentration'
+                : conflict
+                  ? 'explicit-mismatch'
+                  : offer.currency !== product.currency
+                    ? 'currency-rejected'
+                    : isAccessory(offer.title, product.title)
+                      ? 'accessory-rejected'
+                      : !isPlausiblePrice(offer.price, product.currentPrice)
+                        ? 'price-rejected'
+                        : !(
+                              compatibleAttributes(product, offer) &&
+                              (isVerifiedMatch(product, offer) || offer !== original)
+                            )
+                          ? 'insufficient-identity'
+                          : !verifiedOffers(product, [offer]).length
+                            ? 'render-identity-rejected'
+                            : undefined;
+          if (reason) {
+            rejections[reason] = (rejections[reason] ?? 0) + 1;
+            return [];
+          }
+          return [{ offer, score: titleSimilarity(product.title, offer.title) }];
         })
-        .filter(
-          ({ offer, verified }) =>
-            verified &&
-            offer.currency === product.currency &&
-            !isAccessory(offer.title, product.title) &&
-            isPlausiblePrice(offer.price, product.currentPrice),
-        )
         .sort((x, y) => y.score - x.score || x.offer.price - y.offer.price);
       diagnostics.push({
         reason: !offers.length
           ? 'no-search-results'
           : ranked.length
             ? 'verified-competitor'
-            : product.comparisonIdentityVerified === false
-              ? 'insufficient-selected-identity'
-              : offers.some((offer) => {
-                    const a = titleAttributes(
-                        `${product.title} ${product.variant ?? ''}`,
-                      ),
-                      b = titleAttributes(`${offer.title} ${offer.variant ?? ''}`);
-                    return (
-                      !identityFieldsAgree(product, offer) ||
-                      Object.entries(a).some(([key, value]) => b[key] && b[key] !== value)
-                    );
-                  })
-                ? 'explicit-mismatch'
-                : 'insufficient-identity',
+            : Object.keys(rejections).length === 1
+              ? Object.keys(rejections)[0]
+              : 'mixed-rejections',
+        sourceEvidence,
+        discovery,
+        rejections,
         store: adapter.id,
         status: !offers.length ? 'no-results' : !ranked.length ? 'rejected' : 'matched',
         candidates: offers.length,
@@ -171,6 +191,9 @@ export async function findOffers(
         reason: diagnostic.reason,
         candidates: diagnostic.candidates,
         verified: diagnostic.verified,
+        sourceEvidence: diagnostic.sourceEvidence,
+        discovery: diagnostic.discovery,
+        rejections: diagnostic.rejections,
       });
     }
   }

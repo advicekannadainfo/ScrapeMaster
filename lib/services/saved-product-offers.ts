@@ -16,8 +16,19 @@ type Source = {
   exactEvidence?: unknown;
 };
 export async function savedProductOffers(source: Source): Promise<Offer[]> {
-  if (!sufficientExactEvidence(source.exactEvidence) || !freshSavedPrice(source))
+  const sourceGate = !sufficientExactEvidence(source.exactEvidence)
+    ? 'source-evidence-insufficient'
+    : !freshSavedPrice(source)
+      ? 'source-price-unavailable-or-stale'
+      : undefined;
+  if (sourceGate) {
+    console.info('[compare] Saved product reuse', {
+      status: sourceGate,
+      candidates: 0,
+      verified: 0,
+    });
     return [];
+  }
   const records = await ProductModel.find({
     store: { $ne: source.store },
     currency: source.currency,
@@ -56,5 +67,10 @@ export async function savedProductOffers(source: Source): Promise<Offer[]> {
         savedTrackedProduct: true,
       });
   }
+  console.info('[compare] Saved product reuse', {
+    status: byStore.size ? 'verified-competitor' : 'no-fresh-exact-match',
+    candidates: records.length,
+    verified: byStore.size,
+  });
   return [...byStore.values()];
 }

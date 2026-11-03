@@ -50,6 +50,14 @@ describe('searchStores', () => {
         candidates: 0,
         verified: 0,
         reason: 'no-search-results',
+        sourceEvidence: 'eligible',
+        discovery: {
+          cacheHit: false,
+          parsedCandidates: 0,
+          candidateLimit: 20,
+          truncated: false,
+        },
+        rejections: {},
       },
       {
         store: 'flipkart',
@@ -57,6 +65,14 @@ describe('searchStores', () => {
         candidates: 1,
         verified: 0,
         reason: 'insufficient-identity',
+        sourceEvidence: 'eligible',
+        discovery: {
+          cacheHit: false,
+          parsedCandidates: 1,
+          candidateLimit: 20,
+          truncated: false,
+        },
+        rejections: { 'insufficient-identity': 1 },
       },
     ]);
     expect(result.offers.map((o) => o.store)).toEqual(['myntra.com']);

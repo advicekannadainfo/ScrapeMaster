@@ -21,6 +21,8 @@ function selectedVolume(value: string): number | undefined {
 function fragranceName(title: string, brand: string): string | undefined {
   const words = title
     .toLowerCase()
+    .replace(/\beau\s+de\s+parfum\b/g, 'edp')
+    .replace(/\beau\s+de\s+toilette\b/g, 'edt')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
     .split(/\s+/);
@@ -36,6 +38,8 @@ function fragranceName(title: string, brand: string): string | undefined {
     'perfume',
     'perfumes',
     'parfum',
+    'edp',
+    'edt',
     'fragrance',
     'fragrances',
     'unisex',
@@ -111,7 +115,13 @@ function titleVolume(title: string): number | undefined {
   const sizes = [...title.matchAll(TITLE_VOLUME)].map((match) =>
     selectedVolume(`${match[1]} ${match[2]}`),
   );
-  return sizes.length === 1 ? sizes[0] : undefined;
+  // Repeated identical quantities are not alternative sizes. Distinct or invalid
+  // volumes remain ambiguous; each value still comes from this listing itself.
+  return sizes.length &&
+    sizes.every((size) => size !== undefined && size > 0) &&
+    new Set(sizes).size === 1
+    ? sizes[0]
+    : undefined;
 }
 
 function concentration(title: string): string | undefined {

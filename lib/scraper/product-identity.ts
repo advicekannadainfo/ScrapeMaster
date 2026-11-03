@@ -40,7 +40,9 @@ export function normalizedValue(value: string) {
 }
 /** Only facts explicitly printed in a title/specification are extracted. */
 export function titleAttributes(title: string): Attributes {
-  const text = normalizedValue(title);
+  const text = normalizedValue(title)
+    .replace(/\beau\s+de\s+parfum\b/g, 'edp')
+    .replace(/\beau\s+de\s+toilette\b/g, 'edt');
   const result: Attributes = {};
   const capture = (key: string, pattern: RegExp) => {
     const values = [...text.matchAll(pattern)].map((m) =>

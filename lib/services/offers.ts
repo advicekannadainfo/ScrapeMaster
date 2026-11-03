@@ -83,6 +83,16 @@ export async function updateOffers(id: string) {
   const storedManual = verifiedOffers(source, earlier);
   // New automatic search wins over older manual prices for the same store.
   const offers = mergeVerifiedCandidateOffers(source, [...storedManual, ...discovered]);
+  console.info('[compare] Offer merge', {
+    stores: ['amazon', 'flipkart', 'myntra.com']
+      .filter((store) => store !== source.store)
+      .map((store) => ({
+        store,
+        discovered: discovered.some((offer) => offer.store === store),
+        previouslySaved: source.offers.some((offer) => offer.store === store),
+        retained: offers.some((offer) => offer.store === store),
+      })),
+  });
   await ProductModel.updateOne(
     { _id: id },
     { $set: { offers, offersCheckedAt: new Date() } },
