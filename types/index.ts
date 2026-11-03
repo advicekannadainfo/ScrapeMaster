@@ -8,6 +8,9 @@ export type User = {
 };
 
 export type Product = {
+  canonicalIdentity?: unknown;
+  priceObservation?: unknown;
+  productLinks?: unknown;
   exactEvidence?: unknown;
   comparisonIdentityVerified?: boolean;
   brand?: string;
@@ -83,6 +86,8 @@ export type LiveProductUpdate = {
 };
 
 export type Offer = {
+  canonicalIdentity?: unknown;
+  priceObservation?: unknown;
   exactEvidence?: unknown;
   savedTrackedProduct?: boolean;
   brand?: string;

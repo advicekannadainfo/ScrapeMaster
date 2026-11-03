@@ -1,5 +1,7 @@
 # Main-product exact evidence and saved-product discovery
 
+Historical baseline note: fragrance behavior is superseded by [the category profile foundation](category-matching-foundation.md). Non-fragrance legacy protections remain.
+
 Baseline a6715bb6e020f4f056a82735803cd19a98eecbe1. No live ProClip JSON is available.
 Tracking confidence, model evidence, selected attributes and pair verification
 remain separate. A legacy false flag can be compensated only by two complete,

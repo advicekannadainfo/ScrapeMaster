@@ -1,3 +1,5 @@
+import { independentFragrance } from './matching/fragrance';
+import { categoryDecision } from './matching';
 import { compatibleAttributes, titleAttributes, categoryFor } from './product-identity';
 import 'server-only';
 import type { Offer, ScrapedProduct } from '@/types';
@@ -8,12 +10,17 @@ import {
   comparisonSearchQuery,
   identityFieldsAgree,
   verifiedOffers,
+  isVerifiedProductMatch,
 } from '@/lib/verified-offers';
 import {
   enrichSearchFragranceIdentity,
   fragranceDiscoveryQuery,
 } from './product-candidate-match';
-import { discoverOffers, type DiscoveryObservation } from './discovery';
+import {
+  discoverOffers,
+  DISCOVERY_POOL_LIMIT,
+  type DiscoveryObservation,
+} from './discovery';
 
 /**
  * Search every store that supports the product's region for the same item
@@ -33,6 +40,8 @@ export async function findOffersWithDiagnostics(
     | 'variant'
     | 'comparisonIdentityVerified'
     | 'exactEvidence'
+    | 'canonicalIdentity'
+    | 'priceObservation'
   >,
 ) {
   const region = regionFromCurrency(product.currency);
@@ -48,55 +57,81 @@ export async function findOffersWithDiagnostics(
       'eligible' | 'selected-volume-unconfirmed' | 'selected-identity-unconfirmed';
     discovery?: DiscoveryObservation;
     rejections?: Record<string, number>;
+    profile?: string;
+    confidence?: string;
+    sourceIndependentlyValidated?: boolean;
   }[] = [];
 
   const results = await Promise.allSettled(
     stores.map(async (adapter) => {
       let discovery: DiscoveryObservation | undefined;
-      const offers = await discoverOffers(adapter, query, region, undefined, (result) => {
-        discovery = result;
-      });
+      const offers = await discoverOffers(
+        adapter,
+        query,
+        region,
+        undefined,
+        (result) => {
+          discovery = result;
+        },
+        DISCOVERY_POOL_LIMIT,
+      );
       const rejections: Record<string, number> = {};
-      const sourceEvidence =
-        product.comparisonIdentityVerified !== false
-          ? 'eligible'
-          : categoryFor(product.title) === 'perfume' && product.brand && !product.variant
-            ? 'selected-volume-unconfirmed'
-            : 'selected-identity-unconfirmed';
+      const sourceEligible =
+        product.comparisonIdentityVerified !== false ||
+        independentFragrance(product.canonicalIdentity);
+      const sourceEvidence = sourceEligible
+        ? 'eligible'
+        : categoryFor(product.title) === 'perfume' && product.brand && !product.variant
+          ? 'selected-volume-unconfirmed'
+          : 'selected-identity-unconfirmed';
       const ranked = offers
         .flatMap((original) => {
           const offer = enrichSearchFragranceIdentity(product, original);
-          const a = titleAttributes(`${product.title} ${product.variant ?? ''}`);
-          const b = titleAttributes(`${offer.title} ${offer.variant ?? ''}`);
+          const profile = categoryDecision(product, offer);
+          const a = titleAttributes(`${product.title} ${product.variant ?? ''}`),
+            b = titleAttributes(`${offer.title} ${offer.variant ?? ''}`);
           const conflict =
             !identityFieldsAgree(product, offer) ||
             Object.entries(a).some(([key, value]) => b[key] && b[key] !== value);
-          const reason =
-            product.comparisonIdentityVerified === false
-              ? 'insufficient-selected-identity'
-              : [a.concentration, b.concentration].some((value) => value?.includes('/'))
-                ? 'ambiguous-concentration'
-                : conflict
+          let reason: string | undefined;
+          if (!sourceEligible) reason = 'insufficient-selected-identity';
+          else if (offer.currency !== product.currency) reason = 'currency-rejected';
+          else if (isAccessory(offer.title, product.title)) reason = 'accessory-rejected';
+          else if (!isPlausiblePrice(offer.price, product.currentPrice))
+            reason = 'price-rejected';
+          else if (profile) {
+            reason = isVerifiedProductMatch(product, offer)
+              ? undefined
+              : profile.status === 'verified'
+                ? 'render-identity-rejected'
+                : profile.status === 'mismatch'
                   ? 'explicit-mismatch'
-                  : offer.currency !== product.currency
-                    ? 'currency-rejected'
-                    : isAccessory(offer.title, product.title)
-                      ? 'accessory-rejected'
-                      : !isPlausiblePrice(offer.price, product.currentPrice)
-                        ? 'price-rejected'
-                        : !(
-                              compatibleAttributes(product, offer) &&
-                              (isVerifiedMatch(product, offer) || offer !== original)
-                            )
-                          ? 'insufficient-identity'
-                          : !verifiedOffers(product, [offer]).length
-                            ? 'render-identity-rejected'
-                            : undefined;
+                  : profile.reason === 'concentration-ambiguous' ||
+                      profile.reason === 'declaration-conflict'
+                    ? 'ambiguous-concentration'
+                    : conflict
+                      ? 'explicit-mismatch'
+                      : 'insufficient-identity';
+          } else if (conflict) reason = 'explicit-mismatch';
+          else if (!(
+            compatibleAttributes(product, offer) &&
+            (isVerifiedMatch(product, offer) || offer !== original)
+          ))
+            reason = 'insufficient-identity';
+          if (!reason && !verifiedOffers(product, [offer]).length)
+            reason = 'render-identity-rejected';
           if (reason) {
             rejections[reason] = (rejections[reason] ?? 0) + 1;
             return [];
           }
-          return [{ offer, score: titleSimilarity(product.title, offer.title) }];
+          return [
+            {
+              offer,
+              score: titleSimilarity(product.title, offer.title),
+              confidence:
+                profile?.status === 'verified' ? 'category-exact' : 'legacy-strict',
+            },
+          ];
         })
         .sort((x, y) => y.score - x.score || x.offer.price - y.offer.price);
       diagnostics.push({
@@ -108,6 +143,9 @@ export async function findOffersWithDiagnostics(
               ? Object.keys(rejections)[0]
               : 'mixed-rejections',
         sourceEvidence,
+        sourceIndependentlyValidated: independentFragrance(product.canonicalIdentity),
+        profile: categoryFor(product.title) === 'perfume' ? 'fragrance-v1' : 'legacy',
+        confidence: ranked[0]?.confidence ?? 'none',
         discovery,
         rejections,
         store: adapter.id,
@@ -192,6 +230,9 @@ export async function findOffers(
         candidates: diagnostic.candidates,
         verified: diagnostic.verified,
         sourceEvidence: diagnostic.sourceEvidence,
+        sourceIndependentlyValidated: diagnostic.sourceIndependentlyValidated,
+        profile: diagnostic.profile,
+        confidence: diagnostic.confidence,
         discovery: diagnostic.discovery,
         rejections: diagnostic.rejections,
       });

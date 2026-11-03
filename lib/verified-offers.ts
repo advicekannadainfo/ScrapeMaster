@@ -1,3 +1,5 @@
+import { categoryDecision } from './scraper/matching';
+import { freshProfilePrice } from './scraper/matching/observations';
 import { exactMatch, freshSavedPrice, readExactEvidence } from './scraper/exact-evidence';
 import {
   compatibleAttributes,
@@ -9,6 +11,8 @@ import { isAccessory, isPlausiblePrice } from './scraper/match';
 import { matchingFetchedFragrance } from './scraper/product-candidate-match';
 
 export type MatchIdentity = {
+  canonicalIdentity?: unknown;
+  priceObservation?: unknown;
   url?: string;
   store?: string;
   currentPrice?: number;
@@ -163,6 +167,17 @@ export function isVerifiedProductMatch(source: MatchIdentity, candidate: MatchId
     return false;
   const decision = exactMatch(source.exactEvidence, candidate.exactEvidence);
   if (decision === 'mismatch') return false;
+  const profile = categoryDecision(source, candidate);
+  if (profile)
+    return (
+      identityFieldsAgree(source, candidate) &&
+      !isAccessory(source.title, candidate.title) &&
+      !isAccessory(candidate.title, source.title) &&
+      (profile.status === 'verified' ||
+        (source.canonicalIdentity == null &&
+          candidate.canonicalIdentity == null &&
+          isVerifiedMatch(source, candidate)))
+    );
   if (decision === 'verified')
     return (
       !isAccessory(source.title, candidate.title) &&
@@ -211,30 +226,30 @@ export function verifiedOffers(
       } catch {
         return false;
       }
-      if (
-        offer.savedTrackedProduct &&
-        !freshSavedPrice({
-          url: product.url,
-          store: product.store,
-          currentPrice: product.currentPrice,
-          currency: product.currency,
-          isOutOfStock: product.isOutOfStock,
-          exactEvidence: product.exactEvidence,
-        })
-      )
-        return false;
-      if (
-        offer.savedTrackedProduct &&
-        !freshSavedPrice({
+      if (offer.savedTrackedProduct) {
+        const sourceFresh =
+          product.canonicalIdentity != null
+            ? freshProfilePrice(product)
+            : freshSavedPrice(product);
+        const candidate = {
+          title: offer.title,
+          brand: offer.brand,
+          variant: offer.variant,
           url: offer.url,
           store: offer.store,
           currentPrice: offer.price,
           currency: offer.currency,
           isOutOfStock: false,
+          canonicalIdentity: offer.canonicalIdentity,
+          priceObservation: offer.priceObservation,
           exactEvidence: offer.exactEvidence,
-        })
-      )
-        return false;
+        };
+        const candidateFresh =
+          offer.canonicalIdentity != null
+            ? freshProfilePrice(candidate)
+            : freshSavedPrice(candidate);
+        if (!sourceFresh || !candidateFresh) return false;
+      }
       if (offer.store === product.store) {
         return (
           offer.url === product.url &&

@@ -1,3 +1,5 @@
+import { mainFragranceIdentity } from '../matching/fragrance';
+import { observeProduct } from '../matching/observations';
 import { mainProductDescription } from '@/lib/product-presentation';
 import { productValidationDiagnostic } from '../product-validation-diagnostic';
 import { normalizedValue, categoryFor } from '../product-identity';
@@ -363,7 +365,22 @@ function parseRealMyntraProduct(raw: unknown, url: string, id: string): ScrapedP
     )
       ? netVolumes[0]
       : undefined;
+  const canonicalIdentity = mainFragranceIdentity({
+    title: p.name,
+    brand: brandName(p.brand),
+    store: 'myntra.com',
+    url,
+    selectedVolume,
+    volumeField: 'selectedSeller.netQuantity',
+  });
   return {
+    canonicalIdentity,
+    priceObservation: observeProduct(
+      canonicalIdentity,
+      price,
+      '₹',
+      counts.some((n) => n === 0),
+    ),
     url,
     store: 'myntra.com',
     storeName: 'Myntra',

@@ -1,3 +1,8 @@
+import { independentFragrance } from '@/lib/scraper/matching/fragrance';
+import {
+  validAssociations,
+  type ProductAssociation,
+} from '@/lib/scraper/matching/observations';
 import { savedProductOffers } from './saved-product-offers';
 import { sufficientExactEvidence } from '@/lib/scraper/exact-evidence';
 import 'server-only';
@@ -17,7 +22,7 @@ export const OFFERS_TTL_MS = 24 * 60 * 60 * 1000;
 export async function updateOffers(id: string) {
   const product = await ProductModel.findById(id)
     .select(
-      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence isOutOfStock',
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence canonicalIdentity priceObservation productLinks isOutOfStock',
     )
     .lean();
   if (!product) return [];
@@ -30,8 +35,11 @@ export async function updateOffers(id: string) {
   });
   // Saved-product discovery is local/zero-API-cost, with an independent freshness gate.
   let saved: Offer[] = [];
+  let links: ProductAssociation[] | undefined;
   try {
-    saved = await savedProductOffers(product);
+    saved = await savedProductOffers(product, (result) => {
+      links = result;
+    });
   } catch {
     console.warn('[compare] Saved product lookup failed');
   }
@@ -40,13 +48,14 @@ export async function updateOffers(id: string) {
   // but only while their separate last-check timestamp is still fresh.
   const latest = await ProductModel.findById(id)
     .select(
-      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence isOutOfStock offers candidateLinksCheckedAt',
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence canonicalIdentity priceObservation productLinks isOutOfStock offers candidateLinksCheckedAt',
     )
     .lean();
   if (
     !latest ||
     (latest.comparisonIdentityVerified === false &&
-      !sufficientExactEvidence(latest.exactEvidence))
+      !sufficientExactEvidence(latest.exactEvidence) &&
+      !independentFragrance(latest.canonicalIdentity))
   )
     return discovered;
   const source = {
@@ -95,7 +104,13 @@ export async function updateOffers(id: string) {
   });
   await ProductModel.updateOne(
     { _id: id },
-    { $set: { offers, offersCheckedAt: new Date() } },
+    {
+      $set: {
+        offers,
+        offersCheckedAt: new Date(),
+        ...(links ? { productLinks: validAssociations(source, links) } : {}),
+      },
+    },
   );
   return offers;
 }
@@ -105,6 +120,9 @@ export function mergeVerifiedCandidateOffers(
   product: {
     title: string;
     exactEvidence?: unknown;
+    canonicalIdentity?: unknown;
+    priceObservation?: unknown;
+    isOutOfStock?: boolean;
     comparisonIdentityVerified?: boolean;
     brand?: string;
     variant?: string;
@@ -149,7 +167,7 @@ export async function verifyAndUpdateCandidateOffers(
     throw new Error('Enter one or two candidate links');
   const product = await ProductModel.findById(id)
     .select(
-      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence isOutOfStock',
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence canonicalIdentity priceObservation productLinks isOutOfStock',
     )
     .lean();
   if (!product) throw new Error('Product not found');
@@ -167,7 +185,7 @@ export async function verifyAndUpdateCandidateOffers(
   // Reload after paid work so we preserve any automatic offers saved concurrently.
   const latest = await ProductModel.findById(id)
     .select(
-      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence isOutOfStock offers',
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence canonicalIdentity priceObservation productLinks isOutOfStock offers',
     )
     .lean();
   if (!latest) throw new Error('Product not found');

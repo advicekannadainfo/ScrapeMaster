@@ -4,7 +4,10 @@ const mocks = vi.hoisted(() => ({
   findById: vi.fn(),
   updateOne: vi.fn(),
 }));
-vi.mock('@/lib/scraper/discovery', () => ({ discoverOffers: mocks.discover }));
+vi.mock('@/lib/scraper/discovery', () => ({
+  discoverOffers: mocks.discover,
+  DISCOVERY_POOL_LIMIT: 200,
+}));
 vi.mock('@/lib/models/product.model', () => ({
   default: { findById: mocks.findById, updateOne: mocks.updateOne },
 }));

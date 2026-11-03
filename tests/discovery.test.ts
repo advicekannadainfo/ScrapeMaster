@@ -72,3 +72,37 @@ describe('shared discovery credit controls', () => {
     expect(mocks.load).not.toHaveBeenCalled();
   });
 });
+
+describe('bounded already-paid comparison pool', () => {
+  it('shares 48 parsed candidates with comparison after ordinary name search returns 20, with one load', async () => {
+    mocks.load.mockResolvedValue(
+      Array.from({ length: 48 }, (_, i) => ({ ...sample, price: 700 + i })),
+    );
+    expect(await discover(adapter, 'pooled', 'in')).toHaveLength(20);
+    const observe = vi.fn();
+    expect(await discover(adapter, 'pooled', 'in', undefined, observe, 200)).toHaveLength(
+      48,
+    );
+    expect(observe).toHaveBeenCalledWith({
+      cacheHit: true,
+      parsedCandidates: 48,
+      candidateLimit: 200,
+      truncated: false,
+    });
+    expect(mocks.load).toHaveBeenCalledTimes(1);
+  });
+  it('never ranks an uncontrolled response pool or requests another page', async () => {
+    mocks.load.mockResolvedValue(Array.from({ length: 250 }, () => ({ ...sample })));
+    const observe = vi.fn();
+    expect(
+      await discover(adapter, 'bounded', 'in', undefined, observe, 200),
+    ).toHaveLength(200);
+    expect(observe).toHaveBeenCalledWith({
+      cacheHit: false,
+      parsedCandidates: 250,
+      candidateLimit: 200,
+      truncated: true,
+    });
+    expect(mocks.load).toHaveBeenCalledTimes(1);
+  });
+});

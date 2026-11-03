@@ -1,3 +1,5 @@
+import { mainFragranceIdentity, volumeMl } from '../matching/fragrance';
+import { observeProduct } from '../matching/observations';
 import { mainEvidence } from '../exact-evidence';
 import { mainProductDescription } from '@/lib/product-presentation';
 import { productValidationDiagnostic } from '../product-validation-diagnostic';
@@ -161,7 +163,34 @@ export function parseAmazonAPIProduct(body: string, input: string): ScrapedProdu
     'product_information',
     [target.asin],
   );
+  const canonicalIdentity = mainFragranceIdentity({
+    title: p.title,
+    brand: p.product_information.Brand ?? undefined,
+    store: 'amazon',
+    url: target.url,
+    selectedVolume: volumes[0],
+    volumeField: p.product_information['Item Volume']
+      ? 'product_information.Item Volume'
+      : 'product_information.Package Size Name',
+    pack: (readJSON(body) as { product_information: Record<string, unknown> })
+      .product_information['Number of Items'],
+    declaration:
+      typeof (readJSON(body) as { product_information: Record<string, unknown> })
+        .product_information['Fragrance Concentration'] === 'string'
+        ? String(
+            (readJSON(body) as { product_information: Record<string, unknown> })
+              .product_information['Fragrance Concentration'],
+          )
+        : undefined,
+  });
   return {
+    canonicalIdentity,
+    priceObservation: observeProduct(
+      canonicalIdentity,
+      p.extracted_price,
+      '₹',
+      !available,
+    ),
     exactEvidence: exactEvidence ?? null,
     url: target.url,
     store: 'amazon',
@@ -612,7 +641,26 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
       'specifications.General',
       [target.pid ?? '', p.sku],
     );
+    const general = (
+      original.specifications as { General?: Record<string, unknown> } | undefined
+    )?.General;
+    const canonicalIdentity = mainFragranceIdentity({
+      title: p.title,
+      brand: p.brand,
+      store: 'flipkart',
+      url: target.url,
+      selectedVolume:
+        typeof general?.Quantity === 'string' ? volumeMl(general.Quantity) : undefined,
+      volumeField: 'specifications.General.Quantity',
+    });
     return {
+      canonicalIdentity,
+      priceObservation: observeProduct(
+        canonicalIdentity,
+        p.currentPrice,
+        p.currency,
+        p.isOutOfStock,
+      ),
       exactEvidence: exactEvidence ?? null,
       url: target.url,
       store: 'flipkart',

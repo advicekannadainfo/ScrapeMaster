@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Offer } from '@/types';
 
 const mocks = vi.hoisted(() => ({ discover: vi.fn() }));
-vi.mock('@/lib/scraper/discovery', () => ({ discoverOffers: mocks.discover }));
+vi.mock('@/lib/scraper/discovery', () => ({
+  discoverOffers: mocks.discover,
+  DISCOVERY_POOL_LIMIT: 200,
+}));
 vi.mock('@/lib/scraper/stores', () => ({
   regionFromCurrency: () => 'in',
   searchableStores: () => [

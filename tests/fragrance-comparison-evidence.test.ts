@@ -78,6 +78,9 @@ beforeEach(async () => {
   mocks.load.mockReset();
   mocks.findById.mockReset();
   mocks.find.mockReset();
+  mocks.find.mockReturnValue({
+    select: () => ({ sort: () => ({ limit: () => ({ lean: async () => [] }) }) }),
+  });
   mocks.updateOne.mockReset();
   mocks.load.mockResolvedValue([]);
   ({ findOffersWithDiagnostics } = await import('@/lib/scraper/compare'));
@@ -113,17 +116,19 @@ describe('independent fragrance discovery evidence, offline only', () => {
     expect(mocks.load).toHaveBeenCalledTimes(2);
     expect(mocks.load.mock.calls.every((call) => call[3].kind === 'search')).toBe(true);
   });
-  it('does not certify the captured Product long title as a Search match with ambiguous EDP/EDT marketing', async () => {
+  it('does not treat comparative EDP/EDT marketing as a selected concentration', async () => {
     const p = source();
     const ambiguous = amazonListing(amazonFixture.title);
-    expect(verifiedOffers(p, [enrichSearchFragranceIdentity(p, ambiguous)])).toEqual([]);
+    expect(verifiedOffers(p, [enrichSearchFragranceIdentity(p, ambiguous)])).toHaveLength(
+      1,
+    );
     mocks.load.mockImplementation(async (adapter: { id: string }) =>
       adapter.id === 'amazon' ? [ambiguous] : [],
     );
     const result = await findOffersWithDiagnostics(p);
     expect(result.diagnostics.find((d) => d.store === 'amazon')).toMatchObject({
-      reason: 'ambiguous-concentration',
-      verified: 0,
+      reason: 'verified-competitor',
+      verified: 1,
     });
   });
   it('accepts repeated identical volume evidence but rejects two different quantities', () => {
@@ -136,7 +141,11 @@ describe('independent fragrance discovery evidence, offline only', () => {
     expect(verifiedOffers(p, [enrichSearchFragranceIdentity(p, mixed)])).toEqual([]);
   });
   it('normalizes explicit EDP wording without assuming bare perfume means EDP', () => {
-    const p = { ...source(), title: 'BLA BLI BLU Love Drunk Eau de Parfum Perfume 30ml' };
+    const p = {
+      ...source(),
+      canonicalIdentity: null,
+      title: 'BLA BLI BLU Love Drunk Eau de Parfum Perfume 30ml',
+    };
     const good = enrichSearchFragranceIdentity(
       p,
       amazonListing('BLABLIBLU Love Drunk EDP Perfume 30 ml'),
@@ -163,7 +172,7 @@ describe('independent fragrance discovery evidence, offline only', () => {
       verifiedOffers(p, [enrichSearchFragranceIdentity(p, amazonListing(title))]),
     ).toEqual([]);
   });
-  it('reports top-20 truncation/cache and does not fetch a Product API for the 21st listing', async () => {
+  it('ranks the 21st parsed listing before retention without another Product or Search call', async () => {
     const p = { ...source(), title: source().title + ' LimitEvidence' };
     const wrong = amazonListing('BLABLIBLU Love Drunk Perfume 100ml');
     mocks.load.mockImplementation(async (adapter: { id: string }) =>
@@ -172,17 +181,17 @@ describe('independent fragrance discovery evidence, offline only', () => {
         : [],
     );
     const result = await findOffersWithDiagnostics(p);
-    expect(result.offers.some((o) => o.store === 'amazon')).toBe(false);
+    expect(result.offers.some((o) => o.store === 'amazon')).toBe(true);
     expect(result.diagnostics.find((d) => d.store === 'amazon')).toMatchObject({
-      status: 'rejected',
-      reason: 'explicit-mismatch',
-      candidates: 20,
-      verified: 0,
+      status: 'matched',
+      reason: 'verified-competitor',
+      candidates: 21,
+      verified: 1,
       discovery: {
         cacheHit: false,
         parsedCandidates: 21,
-        candidateLimit: 20,
-        truncated: true,
+        candidateLimit: 200,
+        truncated: false,
       },
       rejections: { 'explicit-mismatch': 20 },
     });
@@ -253,7 +262,7 @@ describe('independent fragrance discovery evidence, offline only', () => {
     expect(offers.map((o) => o.store).sort()).toEqual(['flipkart', 'myntra.com']);
     expect(offers.find((o) => o.store === 'myntra.com')).toEqual(previous);
     expect(mocks.updateOne.mock.calls[0][1].$set.offers).toEqual(offers);
-    expect(mocks.find).not.toHaveBeenCalled(); // no sufficient fresh strong source evidence
+    expect(mocks.find).toHaveBeenCalledTimes(1); // bounded local identity lookup, no paid request
   });
   it('rejects stale saved prices without treating a comparison write as a fresh observation', () => {
     const p = parseAmazonAPIProduct(

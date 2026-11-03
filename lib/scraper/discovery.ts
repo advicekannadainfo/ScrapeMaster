@@ -7,6 +7,7 @@ import { dedicatedFirst } from './provider-routes';
 export const DISCOVERY_TTL_MS = 10 * 60_000;
 export const DISCOVERY_FAILURE_COOLDOWN_MS = 60_000;
 export const DISCOVERY_CANDIDATE_LIMIT = 20;
+export const DISCOVERY_POOL_LIMIT = 200;
 export type DiscoveryObservation = {
   cacheHit: boolean;
   parsedCandidates: number;
@@ -28,6 +29,7 @@ export function discoverOffers(
     maxPaidRequests: 1,
   },
   observe?: (result: DiscoveryObservation) => void,
+  candidateLimit: 20 | 200 = DISCOVERY_CANDIDATE_LIMIT,
 ): Promise<Offer[]> {
   const search = adapter.search;
   if (!search || !search.regions.includes(region) || search.enabled?.() === false)
@@ -42,10 +44,10 @@ export function discoverOffers(
       observe?.({
         cacheHit,
         parsedCandidates: Math.min(entry.parsedCandidates, 10_000),
-        candidateLimit: DISCOVERY_CANDIDATE_LIMIT,
-        truncated: entry.parsedCandidates > DISCOVERY_CANDIDATE_LIMIT,
+        candidateLimit,
+        truncated: entry.parsedCandidates > candidateLimit,
       });
-      return [...offers];
+      return offers.slice(0, candidateLimit);
     });
   if (hit && hit.until > Date.now()) return observed(hit, true);
   const entry = {
@@ -79,9 +81,10 @@ export function discoverOffers(
     })
     .then((offers) => {
       entry.until = Date.now() + DISCOVERY_TTL_MS;
-      const valid = offers.filter((o) => Number.isFinite(o.price) && o.price > 0);
-      entry.parsedCandidates = valid.length;
-      return valid.slice(0, DISCOVERY_CANDIDATE_LIMIT);
+      entry.parsedCandidates = offers.length;
+      return offers
+        .slice(0, DISCOVERY_POOL_LIMIT)
+        .filter((o) => Number.isFinite(o.price) && o.price > 0);
     })
     .catch((error) => {
       entry.until = Date.now() + DISCOVERY_FAILURE_COOLDOWN_MS;

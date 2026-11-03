@@ -1,3 +1,6 @@
+import { fragranceProductLinks } from './fragrance-product-links';
+import { independentFragrance } from '@/lib/scraper/matching/fragrance';
+import type { ProductAssociation } from '@/lib/scraper/matching/observations';
 import 'server-only';
 import ProductModel from '@/lib/models/product.model';
 import type { Offer } from '@/types';
@@ -8,6 +11,13 @@ import {
   SAVED_PRODUCT_TTL_MS,
 } from '@/lib/scraper/exact-evidence';
 type Source = {
+  title?: string;
+  brand?: string | null;
+  variant?: string | null;
+  comparisonIdentityVerified?: boolean | null;
+  canonicalIdentity?: unknown;
+  priceObservation?: unknown;
+  productLinks?: unknown;
   store: string;
   url: string;
   currentPrice: number;
@@ -15,7 +25,15 @@ type Source = {
   isOutOfStock?: boolean;
   exactEvidence?: unknown;
 };
-export async function savedProductOffers(source: Source): Promise<Offer[]> {
+export async function savedProductOffers(
+  source: Source,
+  onLinks?: (links: ProductAssociation[]) => void,
+): Promise<Offer[]> {
+  if (source.title && independentFragrance(source.canonicalIdentity)) {
+    const result = await fragranceProductLinks({ ...source, title: source.title });
+    onLinks?.(result.links);
+    return result.offers;
+  }
   const sourceGate = !sufficientExactEvidence(source.exactEvidence)
     ? 'source-evidence-insufficient'
     : !freshSavedPrice(source)

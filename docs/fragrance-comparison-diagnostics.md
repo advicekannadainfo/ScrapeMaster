@@ -1,5 +1,7 @@
 # Fragrance comparison evidence and diagnostics
 
+Historical baseline note: fragrance behavior is superseded by [the category profile foundation](category-matching-foundation.md). Non-fragrance legacy protections remain.
+
 These are offline findings, not the cause of an uncaptured live Amazon click.
 The existing sanitized Amazon Product fixture is NOT that click's Search response.
 Its long title contains comparative EDP/EDT marketing, so using that exact wording

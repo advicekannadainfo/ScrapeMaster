@@ -1,3 +1,4 @@
+import { independentFragrance } from './matching/fragrance';
 import { sufficientExactEvidence } from './exact-evidence';
 import 'server-only';
 import type { Offer, ScrapedProduct } from '@/types';
@@ -22,6 +23,8 @@ export async function verifyCandidateLinks(
     | 'store'
     | 'comparisonIdentityVerified'
     | 'exactEvidence'
+    | 'canonicalIdentity'
+    | 'priceObservation'
   >,
   links: string[],
 ): Promise<{ offers: Offer[]; diagnostics: LinkResult[] }> {
@@ -29,7 +32,8 @@ export async function verifyCandidateLinks(
     throw new Error('Maximum two candidate links per check');
   if (
     source.comparisonIdentityVerified === false &&
-    !sufficientExactEvidence(source.exactEvidence)
+    !sufficientExactEvidence(source.exactEvidence) &&
+    !independentFragrance(source.canonicalIdentity)
   )
     return {
       offers: [],
@@ -72,6 +76,8 @@ export async function verifyCandidateLinks(
         return {
           offer: {
             exactEvidence: candidate.exactEvidence,
+            canonicalIdentity: candidate.canonicalIdentity,
+            priceObservation: candidate.priceObservation,
             brand: candidate.brand,
             variant: candidate.variant,
             store: candidate.store,

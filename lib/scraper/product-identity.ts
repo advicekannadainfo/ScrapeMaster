@@ -1,3 +1,4 @@
+import { fragranceContext } from './matching/context';
 /** Shared identity evidence. No price, seller or URL is treated as variant evidence. */
 export type Category =
   | 'perfume'
@@ -40,7 +41,7 @@ export function normalizedValue(value: string) {
 }
 /** Only facts explicitly printed in a title/specification are extracted. */
 export function titleAttributes(title: string): Attributes {
-  const text = normalizedValue(title)
+  const text = normalizedValue(fragranceContext(title).selectedText)
     .replace(/\beau\s+de\s+parfum\b/g, 'edp')
     .replace(/\beau\s+de\s+toilette\b/g, 'edt');
   const result: Attributes = {};

@@ -27,6 +27,11 @@ const withoutDescription = (product: ReturnType<typeof ap>) => {
       ...copy.exactEvidence,
       observedAt: 'timestamp omitted in presentation-only equality',
     };
+  if (copy.priceObservation && typeof copy.priceObservation === 'object')
+    copy.priceObservation = {
+      ...copy.priceObservation,
+      observedAt: 'timestamp omitted in presentation-only equality',
+    };
   return copy;
 };
 describe('bounded main-product text normalization', () => {
