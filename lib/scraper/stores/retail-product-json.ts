@@ -4,7 +4,7 @@ import { amazonIndiaProductInput, flipkartProductInput } from '../retail-product
 import type { ScrapedProduct } from '@/types';
 import { cachedFlipkartSearch } from '../flipkart-evidence';
 import { categoryFor, selectedAttributes, titleAttributes } from '../product-identity';
-import { isVerifiedMatch, comparisonSearchQuery } from '@/lib/verified-offers';
+import { comparisonSearchQuery } from '@/lib/verified-offers';
 
 const text = z.string().trim().min(1);
 const positive = z.number().finite().positive();
@@ -373,25 +373,21 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
         : 'Flipkart selected attribute conflicts with title',
     );
   }
-  if (p.variants.length || p.display_sizes.length) {
-    // A populated variants catalog proves neither selection nor colour. Require
-    // colour independently printed in both the main title and selected General
-    // specifications. Root price/stock/SKU/model validation remains mandatory.
-    const colours = [
-      (general as Record<string, string>).Color,
-      (general as Record<string, string>).Colour,
-    ].filter((value): value is string => value !== undefined);
-    const printedColour = titleAttributes(p.title).colour;
-    if (
-      !printedColour ||
-      printedColour.includes('/') ||
-      !colours.length ||
-      colours.some((value) => value.trim().toLowerCase() !== printedColour)
-    )
-      fail(
-        'Flipkart selected variant identity is ambiguous: nonempty variants require independent main-product colour evidence',
-      );
-  }
+  // Alternatives do not invalidate a URL-bound root price. Missing selected
+  // colour only downgrades comparison confidence; explicit conflicts above reject.
+  const colours = [
+    (general as Record<string, string>).Color,
+    (general as Record<string, string>).Colour,
+  ].filter((value): value is string => value !== undefined);
+  const printedColour = titleAttributes(p.title).colour;
+  const catalogSelectionCorroborated =
+    !(p.variants.length || p.display_sizes.length) ||
+    Boolean(
+      printedColour &&
+      !printedColour.includes('/') &&
+      colours.length &&
+      colours.every((value) => value.trim().toLowerCase() === printedColour),
+    );
   const quantities = [
     general.Quantity,
     general['Net Quantity'],
@@ -442,7 +438,7 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
     stars: p.ratings_reviews?.rating ?? 0,
     reviewsCount: p.ratings_reviews?.ratings_count ?? 0,
     requestedIdentityVerified: false as const,
-    comparisonIdentityVerified: model !== undefined,
+    comparisonIdentityVerified: model !== undefined && catalogSelectionCorroborated,
   };
 }
 
@@ -461,8 +457,27 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
     const p = inspectFlipkartAPIProduct(body, input);
     const target = flipkartProductInput(input);
     const cached = cachedFlipkartSearch(input);
-    if (cached && !isVerifiedMatch({ title: cached.title }, { title: p.title }))
-      fail('Flipkart cached search identity conflicts with Product response');
+    if (cached) {
+      // Search is corroboration for tracking, not a selected-colour requirement.
+      const tokens = (title: string) =>
+        new Set(
+          comparisonSearchQuery(title)
+            .split(' ')
+            .filter((word) => !titleAttributes(word).colour),
+        );
+      const a = tokens(cached.title),
+        b = tokens(p.title);
+      const cachedAttributes = titleAttributes(cached.title);
+      const rootAttributes = titleAttributes(`${p.title} ${p.variant ?? ''}`);
+      if (
+        a.size !== b.size ||
+        [...a].some((word) => !b.has(word)) ||
+        Object.entries(cachedAttributes).some(
+          ([key, value]) => rootAttributes[key] && rootAttributes[key] !== value,
+        )
+      )
+        fail('Flipkart cached search identity conflicts with Product response');
+    }
     // Provider URL binding is trusted, but requires independent semantic evidence
     // from the descriptive URL slug or a previously fetched Search row.
     const slug = decodeURIComponent(new URL(target.url).pathname.split('/p/')[0]);

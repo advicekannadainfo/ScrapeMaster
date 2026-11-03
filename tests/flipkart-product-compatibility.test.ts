@@ -106,13 +106,13 @@ describe('focused Flipkart model/variants compatibility, offline only', () => {
       expect(() => parse(p)).toThrow();
     },
   );
-  it('requires colour evidence from selected specifications and main title independently', () => {
+  it('requires independent colour evidence for comparison, not root-price tracking', () => {
     const missing = contract();
     Reflect.deleteProperty(missing.product_results.specifications.General, 'Color');
-    expect(() => parse(missing)).toThrow(/independent main-product colour evidence/);
+    expect(parse(missing).comparisonIdentityVerified).toBe(false);
     const titleMissing = contract();
     titleMissing.product_results.title = 'boAt Airdopes ProClip OWS Earbuds';
-    expect(() => parse(titleMissing)).toThrow(/independent main-product colour evidence/);
+    expect(parse(titleMissing).comparisonIdentityVerified).toBe(false);
   });
   it('rejects conflicts in model, colour and response-side PID/canonical URL', () => {
     const model = contract();
@@ -153,17 +153,21 @@ describe('focused Flipkart model/variants compatibility, offline only', () => {
     Object.assign(p.product_results, { variants: { selected: 'unknown' } });
     expect(() => parse(p)).toThrow(/variants:invalid_type/);
   });
-  it('retains real perfume parsing and rejects an ambiguous perfume alternatives catalog', () => {
+  it('retains real perfume parsing and marks uncertain alternatives comparison-unverified', () => {
     const perfume =
       'https://www.flipkart.com/bla-bli-blu-love-drunk-men-women-cinnamon-date-notes-30-ml/p/itmreal?pid=PERHHD9GPW6NNYRQ';
     expect(parse(real, perfume)).toMatchObject({ currentPrice: 250, variant: '30ml' });
-    expect(() =>
+    expect(
       inspectFlipkartAPIProduct(
         JSON.stringify({
           product_results: { ...real.product_results, variants: [{ size: '100ml' }] },
         }),
         perfume,
       ),
-    ).toThrow(/ambiguous/);
+    ).toMatchObject({
+      currentPrice: 250,
+      variant: '30ml',
+      comparisonIdentityVerified: false,
+    });
   });
 });

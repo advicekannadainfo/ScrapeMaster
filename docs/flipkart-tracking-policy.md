@@ -16,21 +16,23 @@ this product from becoming a cross-store verified source/candidate, even when
 its title happens to equal another listing. Automatic discovery still attempts normal cached store searches for such a source;
 its results remain unverified and hidden. Manual verification avoids paid Product requests.
 Existing DB offers are retained and filtered at render time instead of erased.
-When a later response has explicit model evidence, the parser writes true so
+When a later response has sufficient explicit model and selected-variant evidence,
 normal comparison can resume under the existing strict variant rules.
 
 Variable or absent specifications/General groups are permitted for tracking.
 Unrelated structured fields are ignored, but recognized selected specification
 fields must have supported scalar types; contradictory model/brand/colour/size/
 quantity data still rejects. Nonempty variants and display_sizes arrays are
-bounded at 50 and require independent main-product colour evidence; their
+bounded at 50. Missing independent main-product colour evidence downgrades
+comparison confidence without rejecting URL-bound tracking; their
 options/selected flags/prices are never used to select the tracked product.
 Existing availability, root price, URL/PID and unsupported non-missing model
 representation checks are preserved. No alternative field schema is guessed.
 
 Only verified model-format strings are currently recognized. Missing model
 products can track when the above evidence suffices, but cannot compare yet.
-Unknown stock or genuinely ambiguous selected variants remain failures. Legacy
+Unknown stock, explicit variant contradictions and unbound root prices remain failures.
+Missing optional colour is unknown, never copied from the alternatives catalog. Legacy
 records lacking the new optional flag follow the existing identity policy.
 The optional Mongoose field is persisted by existing track/refresh services;
 no database migration/write was run during this implementation.

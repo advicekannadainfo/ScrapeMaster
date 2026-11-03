@@ -99,11 +99,15 @@ describe('full sanitized real Flipkart Product response', () => {
     const data = structuredClone(fixture);
     data.product_results.specifications.General.Quantity = '2 x 30 ml';
     expect(() => inspect(data)).toThrow(/unsupported/);
-    expect(() =>
+    expect(
       inspect({
         product_results: { ...fixture.product_results, variants: [{ size: '100ml' }] },
       }),
-    ).toThrow();
+    ).toMatchObject({
+      currentPrice: 250,
+      variant: '30ml',
+      comparisonIdentityVerified: false,
+    });
   });
   it('rejects conflicting extra response PID and canonical URL without interpreting them as proof', () => {
     for (const extra of [

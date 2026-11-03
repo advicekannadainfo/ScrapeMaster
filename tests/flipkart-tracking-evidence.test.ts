@@ -82,7 +82,7 @@ describe('tracking evidence is distinct from comparison identity', () => {
     ).toThrow(/tracking identity is ambiguous/);
     const p = contract();
     Reflect.deleteProperty(p.product_results.specifications.General, 'Color');
-    expect(() => parse(p)).toThrow(/ambiguous/);
+    expect(parse(p).comparisonIdentityVerified).toBe(false);
   });
   it('permits explicit matching response identity for an opaque URL, never SKU-to-PID equivalence', () => {
     const p = contract();
