@@ -1,4 +1,4 @@
-import { compatibleAttributes } from './product-identity';
+import { compatibleAttributes, titleAttributes } from './product-identity';
 import 'server-only';
 import type { Offer, ScrapedProduct } from '@/types';
 import { isAccessory, isPlausiblePrice, titleSimilarity } from './match';
@@ -31,6 +31,7 @@ export async function findOffersWithDiagnostics(
     | 'brand'
     | 'variant'
     | 'comparisonIdentityVerified'
+    | 'exactEvidence'
   >,
 ) {
   const region = regionFromCurrency(product.currency);
@@ -71,6 +72,24 @@ export async function findOffersWithDiagnostics(
         )
         .sort((x, y) => y.score - x.score || x.offer.price - y.offer.price);
       diagnostics.push({
+        reason: !offers.length
+          ? 'no-search-results'
+          : ranked.length
+            ? 'verified-competitor'
+            : product.comparisonIdentityVerified === false
+              ? 'insufficient-selected-identity'
+              : offers.some((offer) => {
+                    const a = titleAttributes(
+                        `${product.title} ${product.variant ?? ''}`,
+                      ),
+                      b = titleAttributes(`${offer.title} ${offer.variant ?? ''}`);
+                    return (
+                      !identityFieldsAgree(product, offer) ||
+                      Object.entries(a).some(([key, value]) => b[key] && b[key] !== value)
+                    );
+                  })
+                ? 'explicit-mismatch'
+                : 'insufficient-identity',
         store: adapter.id,
         status: !offers.length ? 'no-results' : !ranked.length ? 'rejected' : 'matched',
         candidates: offers.length,
@@ -84,7 +103,7 @@ export async function findOffersWithDiagnostics(
     if (r.status === 'rejected') {
       // Store errors are independent: never erase valid offers from other stores.
       // Keep detailed provider errors in server logs, not customer-facing UI.
-      const reason =
+      const observedKind =
         r.reason && typeof r.reason === 'object' && 'kind' in r.reason
           ? String((r.reason as { kind: unknown }).kind)
           : r.reason instanceof Error
@@ -95,7 +114,18 @@ export async function findOffersWithDiagnostics(
         status: 'failed',
         candidates: 0,
         verified: 0,
-        reason: reason.slice(0, 240),
+        reason: [
+          'blocked',
+          'rate-limited',
+          'unavailable',
+          'timeout',
+          'not-found',
+          'disallowed',
+          'parse',
+          'unsupported',
+        ].includes(observedKind)
+          ? observedKind
+          : 'provider-search-failure',
       });
     }
   });
@@ -138,6 +168,7 @@ export async function findOffers(
       console.info('[compare] Search result', {
         store: diagnostic.store,
         status: diagnostic.status,
+        reason: diagnostic.reason,
         candidates: diagnostic.candidates,
         verified: diagnostic.verified,
       });

@@ -24,7 +24,7 @@ export default function OfferComparison({ product }: { product: Product }) {
             <Store className="size-4 text-accent" aria-hidden /> Best price across stores
           </h2>
           <p className="mt-1 text-xs text-muted">
-            {product.comparisonIdentityVerified === false ? (
+            {product.comparisonIdentityVerified === false && offers.length <= 1 ? (
               'Your product is tracked. Other-store offers need exact model and variant verification.'
             ) : product.offersCheckedAt ? (
               <>

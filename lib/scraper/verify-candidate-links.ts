@@ -1,3 +1,4 @@
+import { sufficientExactEvidence } from './exact-evidence';
 import 'server-only';
 import type { Offer, ScrapedProduct } from '@/types';
 import { isVerifiedProductMatch } from '@/lib/verified-offers';
@@ -20,12 +21,16 @@ export async function verifyCandidateLinks(
     | 'currentPrice'
     | 'store'
     | 'comparisonIdentityVerified'
+    | 'exactEvidence'
   >,
   links: string[],
 ): Promise<{ offers: Offer[]; diagnostics: LinkResult[] }> {
   if (links.length > MAX_CANDIDATE_LINKS)
     throw new Error('Maximum two candidate links per check');
-  if (source.comparisonIdentityVerified === false)
+  if (
+    source.comparisonIdentityVerified === false &&
+    !sufficientExactEvidence(source.exactEvidence)
+  )
     return {
       offers: [],
       diagnostics: links.map(() => ({ store: 'unknown', status: 'rejected' as const })),
@@ -66,6 +71,7 @@ export async function verifyCandidateLinks(
           return { result: { store, status: 'rejected' } };
         return {
           offer: {
+            exactEvidence: candidate.exactEvidence,
             brand: candidate.brand,
             variant: candidate.variant,
             store: candidate.store,

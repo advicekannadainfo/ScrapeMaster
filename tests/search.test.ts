@@ -44,8 +44,20 @@ describe('searchStores', () => {
       image: '',
     });
     expect(result.diagnostics).toEqual([
-      { store: 'amazon', status: 'no-results', candidates: 0, verified: 0 },
-      { store: 'flipkart', status: 'rejected', candidates: 1, verified: 0 },
+      {
+        store: 'amazon',
+        status: 'no-results',
+        candidates: 0,
+        verified: 0,
+        reason: 'no-search-results',
+      },
+      {
+        store: 'flipkart',
+        status: 'rejected',
+        candidates: 1,
+        verified: 0,
+        reason: 'insufficient-identity',
+      },
     ]);
     expect(result.offers.map((o) => o.store)).toEqual(['myntra.com']);
   });

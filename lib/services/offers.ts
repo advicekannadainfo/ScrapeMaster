@@ -1,3 +1,5 @@
+import { savedProductOffers } from './saved-product-offers';
+import { sufficientExactEvidence } from '@/lib/scraper/exact-evidence';
 import 'server-only';
 import type { Offer } from '@/types';
 import ProductModel from '@/lib/models/product.model';
@@ -15,25 +17,38 @@ export const OFFERS_TTL_MS = 24 * 60 * 60 * 1000;
 export async function updateOffers(id: string) {
   const product = await ProductModel.findById(id)
     .select(
-      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified',
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence isOutOfStock',
     )
     .lean();
   if (!product) return [];
-  const discovered = await findOffers({
+  const automatic = await findOffers({
     ...product,
     image: product.image ?? undefined,
     comparisonIdentityVerified: product.comparisonIdentityVerified ?? undefined,
     brand: product.brand ?? undefined,
     variant: product.variant ?? undefined,
   });
+  // Saved-product discovery is local/zero-API-cost, with an independent freshness gate.
+  let saved: Offer[] = [];
+  try {
+    saved = await savedProductOffers(product);
+  } catch {
+    console.warn('[compare] Saved product lookup failed');
+  }
+  const discovered = [...automatic, ...saved];
   // Preserve independently verified manual offers during a subsequent auto-search,
   // but only while their separate last-check timestamp is still fresh.
   const latest = await ProductModel.findById(id)
     .select(
-      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified offers candidateLinksCheckedAt',
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence isOutOfStock offers candidateLinksCheckedAt',
     )
     .lean();
-  if (!latest || latest.comparisonIdentityVerified === false) return discovered;
+  if (
+    !latest ||
+    (latest.comparisonIdentityVerified === false &&
+      !sufficientExactEvidence(latest.exactEvidence))
+  )
+    return discovered;
   const source = {
     ...latest,
     image: latest.image ?? undefined,
@@ -44,6 +59,7 @@ export async function updateOffers(id: string) {
     // before passing them into our strict Offer matching functions.
     offers: (latest.offers ?? []).map((offer) => ({
       ...offer,
+      savedTrackedProduct: offer.savedTrackedProduct ?? undefined,
       brand: offer.brand ?? undefined,
       variant: offer.variant ?? undefined,
       image: offer.image ?? undefined,
@@ -58,6 +74,7 @@ export async function updateOffers(id: string) {
         .filter((offer) => offer.brand && offer.variant)
         .map((offer) => ({
           ...offer,
+          savedTrackedProduct: offer.savedTrackedProduct ?? undefined,
           brand: offer.brand ?? undefined,
           variant: offer.variant ?? undefined,
           image: offer.image ?? undefined,
@@ -77,6 +94,7 @@ export async function updateOffers(id: string) {
 export function mergeVerifiedCandidateOffers(
   product: {
     title: string;
+    exactEvidence?: unknown;
     comparisonIdentityVerified?: boolean;
     brand?: string;
     variant?: string;
@@ -121,7 +139,7 @@ export async function verifyAndUpdateCandidateOffers(
     throw new Error('Enter one or two candidate links');
   const product = await ProductModel.findById(id)
     .select(
-      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified',
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence isOutOfStock',
     )
     .lean();
   if (!product) throw new Error('Product not found');
@@ -139,7 +157,7 @@ export async function verifyAndUpdateCandidateOffers(
   // Reload after paid work so we preserve any automatic offers saved concurrently.
   const latest = await ProductModel.findById(id)
     .select(
-      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified offers',
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence isOutOfStock offers',
     )
     .lean();
   if (!latest) throw new Error('Product not found');
@@ -152,6 +170,7 @@ export async function verifyAndUpdateCandidateOffers(
       variant: latest.variant ?? undefined,
       offers: latest.offers.map((o) => ({
         ...o,
+        savedTrackedProduct: o.savedTrackedProduct ?? undefined,
         brand: o.brand ?? undefined,
         variant: o.variant ?? undefined,
         image: o.image ?? undefined,

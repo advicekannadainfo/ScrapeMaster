@@ -1,3 +1,4 @@
+import { mainEvidence } from '../exact-evidence';
 import { mainProductDescription } from '@/lib/product-presentation';
 import { productValidationDiagnostic } from '../product-validation-diagnostic';
 import { z } from 'zod';
@@ -145,7 +146,23 @@ export function parseAmazonAPIProduct(body: string, input: string): ScrapedProdu
   const chosenTitleHasVolume =
     /\b\d+(?:\.\d+)?\s*(?:millilitres?|milliliters?|ml|litres?|liters?|l)\b/i.test(title);
   if (volumes.length && !chosenTitleHasVolume) title += ` ${volumes[0]}ml`;
+  const exactEvidence = mainEvidence(
+    {
+      store: 'amazon',
+      url: target.url,
+      title,
+      brand: p.product_information.Brand ?? undefined,
+      currentPrice: p.extracted_price,
+      currency: '₹',
+      isOutOfStock: !available,
+    },
+    (readJSON(body) as { product_information: Record<string, unknown> })
+      .product_information,
+    'product_information',
+    [target.asin],
+  );
   return {
+    exactEvidence: exactEvidence ?? null,
     url: target.url,
     store: 'amazon',
     storeName: 'Amazon',
@@ -580,7 +597,23 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
       fail(
         'Flipkart request URL needs brand/model corroboration from its descriptive slug or cached Search result; SKU is not proof of PID',
       );
+    const exactEvidence = mainEvidence(
+      {
+        store: 'flipkart',
+        url: target.url,
+        title: p.title,
+        brand: p.brand,
+        currentPrice: p.currentPrice,
+        currency: p.currency,
+        isOutOfStock: p.isOutOfStock,
+      },
+      (original.specifications as { General?: Record<string, unknown> } | undefined)
+        ?.General ?? {},
+      'specifications.General',
+      [target.pid ?? '', p.sku],
+    );
     return {
+      exactEvidence: exactEvidence ?? null,
       url: target.url,
       store: 'flipkart',
       storeName: 'Flipkart',

@@ -8,6 +8,7 @@ export type User = {
 };
 
 export type Product = {
+  exactEvidence?: unknown;
   comparisonIdentityVerified?: boolean;
   brand?: string;
   storeProductId?: string;
@@ -82,6 +83,8 @@ export type LiveProductUpdate = {
 };
 
 export type Offer = {
+  exactEvidence?: unknown;
+  savedTrackedProduct?: boolean;
   brand?: string;
   variant?: string;
   /** Store-local identifier; never compare this to another store's identifier. */

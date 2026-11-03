@@ -22,6 +22,11 @@ const mp = (p: unknown = myntra) => parseMyntraAPIProduct(JSON.stringify(p), mur
 const withoutDescription = (product: ReturnType<typeof ap>) => {
   const copy = { ...product };
   Reflect.deleteProperty(copy, 'description');
+  if (copy.exactEvidence && typeof copy.exactEvidence === 'object')
+    copy.exactEvidence = {
+      ...copy.exactEvidence,
+      observedAt: 'timestamp omitted in presentation-only equality',
+    };
   return copy;
 };
 describe('bounded main-product text normalization', () => {

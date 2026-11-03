@@ -1,9 +1,20 @@
-import { compatibleAttributes, normalizedValue } from './scraper/product-identity';
+import { exactMatch, freshSavedPrice, readExactEvidence } from './scraper/exact-evidence';
+import {
+  compatibleAttributes,
+  normalizedValue,
+  titleAttributes,
+} from './scraper/product-identity';
 import type { Offer } from '@/types';
 import { isAccessory, isPlausiblePrice } from './scraper/match';
 import { matchingFetchedFragrance } from './scraper/product-candidate-match';
 
 export type MatchIdentity = {
+  url?: string;
+  store?: string;
+  currentPrice?: number;
+  price?: number;
+  currency?: string;
+  exactEvidence?: unknown;
   comparisonIdentityVerified?: boolean;
   title: string;
   brand?: string;
@@ -105,12 +116,69 @@ type Source = MatchIdentity & {
   currency: string;
   currentPrice: number;
   offers?: Offer[];
+  isOutOfStock?: boolean;
 };
 
 /** Recheck persisted offers at render time; never mutate the database or source. */
 /** Exact title checks for search; independently fetched same-size fragrance pages may
  * additionally use explicit brand, selected variant and full scent-name evidence. */
 export function isVerifiedProductMatch(source: MatchIdentity, candidate: MatchIdentity) {
+  const consistent = (identity: MatchIdentity) => {
+    const e = readExactEvidence(identity.exactEvidence);
+    if (!e) return identity.exactEvidence == null;
+    const record = identity;
+    if (
+      (record.url && record.url !== e.url) ||
+      (record.store && record.store !== e.store) ||
+      (record.currency && record.currency !== e.currency) ||
+      ((record.currentPrice ?? record.price) !== undefined &&
+        (record.currentPrice ?? record.price) !== e.price)
+    )
+      return false;
+    if (
+      identity.brand &&
+      identity.brand.toLowerCase().replace(/[^a-z0-9]/g, '') !==
+        e.brand.value.toLowerCase().replace(/[^a-z0-9]/g, '')
+    )
+      return false;
+    return Object.entries(
+      titleAttributes(`${identity.title} ${identity.variant ?? ''}`),
+    ).every(
+      ([key, value]) =>
+        !e.selected[key as keyof typeof e.selected] ||
+        normalizedValue(e.selected[key as keyof typeof e.selected]!.value) === value,
+    );
+  };
+  if (!consistent(source) || !consistent(candidate)) return false;
+  if (
+    ['model', 'mpn', 'gtin'].some((field) => {
+      const key = field as 'model' | 'mpn' | 'gtin';
+      return (
+        source[key] &&
+        candidate[key] &&
+        normalizedValue(source[key]!) !== normalizedValue(candidate[key]!)
+      );
+    })
+  )
+    return false;
+  const decision = exactMatch(source.exactEvidence, candidate.exactEvidence);
+  if (decision === 'mismatch') return false;
+  if (decision === 'verified')
+    return (
+      !isAccessory(source.title, candidate.title) &&
+      !isAccessory(candidate.title, source.title) &&
+      ['pro', 'plus', 'max', 'ultra', 'lite'].every(
+        (word) =>
+          source.title
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .includes(word) ===
+          candidate.title
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .includes(word),
+      )
+    );
   if (
     source.comparisonIdentityVerified === false ||
     candidate.comparisonIdentityVerified === false
@@ -143,6 +211,30 @@ export function verifiedOffers(
       } catch {
         return false;
       }
+      if (
+        offer.savedTrackedProduct &&
+        !freshSavedPrice({
+          url: product.url,
+          store: product.store,
+          currentPrice: product.currentPrice,
+          currency: product.currency,
+          isOutOfStock: product.isOutOfStock,
+          exactEvidence: product.exactEvidence,
+        })
+      )
+        return false;
+      if (
+        offer.savedTrackedProduct &&
+        !freshSavedPrice({
+          url: offer.url,
+          store: offer.store,
+          currentPrice: offer.price,
+          currency: offer.currency,
+          isOutOfStock: false,
+          exactEvidence: offer.exactEvidence,
+        })
+      )
+        return false;
       if (offer.store === product.store) {
         return (
           offer.url === product.url &&
