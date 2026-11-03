@@ -43,7 +43,7 @@ describe('Myntra Product API parser (synthetic documented-shape fixture)', () =>
     data.product_results.sizes[1].discounted_price = 0;
     expect(parse(data).currentPrice).toBe(1159);
   });
-  it('keeps a same-price size paired with its own MRP regardless of array order', () => {
+  it('tracks a common price without inventing a selected size or MRP when options disagree', () => {
     const data = sample();
     data.product_results.sizes[1].available = true;
     data.product_results.sizes[1].stock = 5;
@@ -51,8 +51,10 @@ describe('Myntra Product API parser (synthetic documented-shape fixture)', () =>
     data.product_results.sizes.reverse();
     expect(parse(data)).toMatchObject({
       currentPrice: 1159,
-      originalPrice: 2899,
-      description: 'Myntra product 31076617. Price for size: 28.',
+      originalPrice: 1159,
+      comparisonIdentityVerified: false,
+      description:
+        'Myntra product 31076617. No selected size; price common to available sizes.',
     });
   });
   it('treats zero stock as unavailable even if available is true', () => {

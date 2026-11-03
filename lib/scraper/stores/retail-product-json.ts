@@ -1,3 +1,4 @@
+import { productValidationDiagnostic } from '../product-validation-diagnostic';
 import { z } from 'zod';
 import { ScrapeError } from '../errors';
 import { amazonIndiaProductInput, flipkartProductInput } from '../retail-product-input';
@@ -13,19 +14,24 @@ const amazonSchema = z.object({
   main_title: text.optional(),
   product_information: z.object({
     ASIN: z.string().regex(/^[a-z0-9]{10}$/i),
-    Brand: text,
+    Brand: text.optional().nullable(),
     'Item Volume': text.optional(),
     'Package Size Name': text.optional(),
   }),
   extracted_price: positive,
-  price_symbol: z.literal('₹'),
+  price_symbol: z.literal('₹').optional(),
+  price: text.optional(),
   main_image: z.string().url(),
-  availability_status: text,
-  purchase_options: z.object({
-    single_offer: z.object({ extracted_price: positive, stock: text }),
-  }),
-  extracted_average_rating: z.number().min(0).max(5).optional(),
-  extracted_total_reviews: z.number().int().nonnegative().optional(),
+  availability_status: text.optional(),
+  purchase_options: z
+    .object({
+      single_offer: z
+        .object({ extracted_price: positive.optional(), stock: text.optional() })
+        .optional(),
+    })
+    .optional(),
+  extracted_average_rating: z.number().min(0).max(5).optional().nullable(),
+  extracted_total_reviews: z.number().int().nonnegative().optional().nullable(),
 });
 function fail(message: string): never {
   throw new ScrapeError(message, 'parse');
@@ -64,14 +70,34 @@ function volume(value: string) {
 export function parseAmazonAPIProduct(body: string, input: string): ScrapedProduct {
   const target = amazonIndiaProductInput(input);
   const result = amazonSchema.safeParse(readJSON(body));
-  if (!result.success) return fail('Amazon Product API fields are missing or invalid');
+  if (!result.success)
+    return fail(
+      `Amazon Product API fields are missing or invalid: ${productValidationDiagnostic(result.error, ['title', 'main_title', 'product_information', 'ASIN', 'Brand', 'Item Volume', 'Package Size Name', 'extracted_price', 'price_symbol', 'price', 'main_image', 'availability_status', 'purchase_options', 'single_offer', 'stock', 'extracted_average_rating', 'extracted_total_reviews'])}`,
+    );
   const p = result.data;
   if (p.product_information.ASIN.toUpperCase() !== target.asin)
     fail('Amazon Product API returned a different ASIN');
-  if (p.extracted_price !== p.purchase_options.single_offer.extracted_price)
+  const single = p.purchase_options?.single_offer;
+  if (
+    single?.extracted_price !== undefined &&
+    p.extracted_price !== single.extracted_price
+  )
     fail('Amazon selected-offer price conflicts with product price');
-  const available = stock(p.availability_status);
-  if (available !== stock(p.purchase_options.single_offer.stock))
+  const printed =
+    /^₹\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)(?: with \d+(?:\.\d+)? percent savings)?$/.exec(
+      p.price ?? '',
+    );
+  if (p.price && /^(?:[$€£]|USD\b|EUR\b|GBP\b)/i.test(p.price))
+    fail('Amazon main-price currency conflicts with INR');
+  if (printed && Number(printed[1].replace(/,/g, '')) !== p.extracted_price)
+    fail('Amazon main-price evidence has conflicting amounts');
+  if (!p.price_symbol && !printed)
+    fail('Amazon price_symbol: INR main-price evidence missing or conflicting');
+  const availability = p.availability_status ?? single?.stock;
+  if (!availability)
+    fail('Amazon availability_status: main-product stock evidence missing');
+  const available = stock(availability);
+  if (single?.stock !== undefined && available !== stock(single.stock))
     fail('Amazon selected-offer stock conflicts with product stock');
   const isPerfume = categoryFor(p.title) === 'perfume';
   const packageSize = p.product_information['Package Size Name'];
@@ -108,7 +134,10 @@ export function parseAmazonAPIProduct(body: string, input: string): ScrapedProdu
   if (!volumes.length && titleVolumes.length)
     fail('Amazon title quantity lacks selected-variant confirmation');
   const compact = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (!compact(title).startsWith(compact(p.product_information.Brand)))
+  if (
+    p.product_information.Brand &&
+    !compact(title).startsWith(compact(p.product_information.Brand))
+  )
     title = `${p.product_information.Brand} ${title}`;
   const chosenTitleHasVolume =
     /\b\d+(?:\.\d+)?\s*(?:millilitres?|milliliters?|ml|litres?|liters?|l)\b/i.test(title);
@@ -118,7 +147,8 @@ export function parseAmazonAPIProduct(body: string, input: string): ScrapedProdu
     store: 'amazon',
     storeName: 'Amazon',
     storeProductId: target.asin,
-    brand: p.product_information.Brand,
+    brand: p.product_information.Brand ?? undefined,
+    comparisonIdentityVerified: Boolean(p.product_information.Brand),
     variant: volumes.length ? `${volumes[0]}ml` : undefined,
     title,
     image: image(p.main_image),
@@ -126,7 +156,7 @@ export function parseAmazonAPIProduct(body: string, input: string): ScrapedProdu
     currentPrice: p.extracted_price,
     originalPrice: p.extracted_price,
     discountRate: 0,
-    description: `Amazon ASIN ${target.asin}. Selected single offer.`,
+    description: `Amazon ASIN ${target.asin}. Validated main-product price.`,
     category: 'General',
     isOutOfStock: !available,
     stars: p.extracted_average_rating ?? 0,

@@ -1,3 +1,5 @@
+import { productValidationDiagnostic } from '../product-validation-diagnostic';
+import { normalizedValue, categoryFor } from '../product-identity';
 import * as cheerio from 'cheerio';
 import { extractPrice } from '../extract';
 import { extractStructured } from '../structured';
@@ -92,10 +94,16 @@ const money = z
   .union([z.number(), z.string().regex(/^\d+(?:\.\d+)?$/)])
   .transform(Number)
   .refine(Number.isFinite);
+const optionalBrand = z
+  .union([z.string().trim().min(1), z.object({ name: z.string().trim().min(1) })])
+  .optional()
+  .nullable();
+const brandName = (value: z.infer<typeof optionalBrand>) =>
+  typeof value === 'string' ? value : value?.name;
 const apiProduct = z.object({
   productId: z.union([z.string(), z.number()]).transform(String),
   name: z.string().trim().min(1),
-  brand: z.string().optional(),
+  brand: optionalBrand,
   mrp: money.optional().nullable(),
   overall_rating: z.number().min(0).max(5).optional().nullable(),
   ratings_count: z.number().int().nonnegative().optional().nullable(),
@@ -119,7 +127,7 @@ const identifier = z
 const realProduct = z.object({
   id: identifier,
   name: z.string().trim().min(1),
-  brand: z.object({ name: z.string().trim().min(1) }),
+  brand: optionalBrand,
   mrp: money.optional(),
   price: z.object({ discounted: money, mrp: money }),
   selectedSeller: z.object({
@@ -138,7 +146,7 @@ const realProduct = z.object({
     .min(1),
   ratings: z
     .object({
-      averageRating: z.number().min(0).max(5),
+      averageRating: z.number().min(0).max(5).optional(),
       totalCount: z.number().int().nonnegative().optional(),
       reviewInfo: z
         .object({
@@ -148,20 +156,25 @@ const realProduct = z.object({
         })
         .optional(),
     })
-    .optional(),
-  media: z.object({
-    albums: z.array(
-      z.object({
-        images: z.array(
-          z.object({
-            imageURL: z.string().optional(),
-            secureSrc: z.string().optional(),
-            src: z.string().optional(),
-          }),
-        ),
-      }),
-    ),
-  }),
+    .optional()
+    .nullable(),
+  images: z.array(z.string().url()).optional(),
+  media: z
+    .object({
+      albums: z.array(
+        z.object({
+          images: z.array(
+            z.object({
+              imageURL: z.string().optional(),
+              secureSrc: z.string().optional(),
+              src: z.string().optional(),
+            }),
+          ),
+        }),
+      ),
+    })
+    .optional()
+    .nullable(),
   sizes: z
     .array(
       z.object({
@@ -177,11 +190,58 @@ const realProduct = z.object({
     .min(1),
 });
 
+function myntraDiagnostic(error: z.ZodError) {
+  return productValidationDiagnostic(error, [
+    'product_results',
+    'id',
+    'productId',
+    'name',
+    'brand',
+    'mrp',
+    'price',
+    'discounted',
+    'selectedSeller',
+    'sellerPartnerId',
+    'discountedPrice',
+    'netQuantity',
+    'quantity',
+    'unit',
+    'type',
+    'discount',
+    'discountId',
+    'buyButtonSellerOrder',
+    'skuId',
+    'ratings',
+    'averageRating',
+    'totalCount',
+    'reviewInfo',
+    'reviewsCount',
+    'media',
+    'albums',
+    'images',
+    'imageURL',
+    'secureSrc',
+    'src',
+    'sizes',
+    'label',
+    'discounted_price',
+    'available',
+    'stock',
+    'seller_partner_id',
+    'discount_id',
+    'frg_list_link',
+    'available_count',
+    'sellable_inventory_count',
+    'overall_rating',
+    'ratings_count',
+  ]);
+}
+
 function parseRealMyntraProduct(raw: unknown, url: string, id: string): ScrapedProduct {
   const result = z.object({ product_results: realProduct }).safeParse(raw);
   if (!result.success)
     throw new ScrapeError(
-      'Myntra Product API returned invalid real product data',
+      `Myntra Product API returned invalid real product data: ${myntraDiagnostic(result.error)}`,
       'parse',
     );
   const p = result.data.product_results;
@@ -253,9 +313,10 @@ function parseRealMyntraProduct(raw: unknown, url: string, id: string): ScrapedP
     (n): n is number => n !== undefined,
   );
   if (!counts.length) fail('Myntra selected offer stock is missing');
-  const image = p.media.albums
+  const image = (p.media?.albums ?? [])
     .flatMap((a) => a.images)
     .flatMap((i) => [i.imageURL, i.secureSrc, i.src])
+    .concat(p.images ?? [])
     .map((value) => {
       if (!value || value.includes('$')) return '';
       try {
@@ -300,7 +361,8 @@ function parseRealMyntraProduct(raw: unknown, url: string, id: string): ScrapedP
     url,
     store: 'myntra.com',
     storeName: 'Myntra',
-    brand: p.brand.name,
+    brand: brandName(p.brand),
+    comparisonIdentityVerified: Boolean(brandName(p.brand)),
     variant: selectedVolume ? `${selectedVolume}ml` : undefined,
     title: p.name,
     currency: '₹',
@@ -308,7 +370,7 @@ function parseRealMyntraProduct(raw: unknown, url: string, id: string): ScrapedP
     currentPrice: price,
     originalPrice: mrp,
     discountRate: Math.round(((mrp - price) / mrp) * 100),
-    category: p.brand.name,
+    category: brandName(p.brand) ?? 'General',
     description: `Myntra product ${id}. Seller ${seller.sellerPartnerId}, SKU ${sku}.`,
     stars: p.ratings?.averageRating ?? 0,
     reviewsCount: p.ratings?.reviewInfo?.reviewsCount ?? 0,
@@ -328,12 +390,38 @@ export function parseMyntraAPIProduct(body: string, url: string): ScrapedProduct
   // the older documented shape after a real-schema identity/price failure.
   if (raw && typeof raw === 'object' && 'product_results' in raw) {
     const p = raw.product_results;
-    if (p && typeof p === 'object' && 'id' in p)
+    if (
+      p &&
+      typeof p === 'object' &&
+      'id' in p &&
+      'productId' in p &&
+      String(p.productId) !== id
+    )
+      throw new ScrapeError('Myntra response has conflicting product IDs', 'parse');
+    if (
+      p &&
+      typeof p === 'object' &&
+      (['id', 'selectedSeller', 'buyButtonSellerOrder', 'media', 'price'].some((key) =>
+        Object.hasOwn(p, key),
+      ) ||
+        (Array.isArray((p as Record<string, unknown>).sizes) &&
+          ((p as Record<string, unknown>).sizes as unknown[]).some(
+            (size) =>
+              size !== null &&
+              typeof size === 'object' &&
+              ['seller_partner_id', 'discount_id', 'frg_list_link'].some((key) =>
+                Object.hasOwn(size, key),
+              ),
+          )))
+    )
       return parseRealMyntraProduct(raw, url, id);
   }
   const result = z.object({ product_results: apiProduct }).safeParse(raw);
   if (!result.success)
-    throw new ScrapeError('Myntra Product API returned invalid product data', 'parse');
+    throw new ScrapeError(
+      `Myntra Product API returned invalid product data: ${myntraDiagnostic(result.error)}`,
+      'parse',
+    );
   const product = result.data.product_results;
   if (product.productId !== id)
     throw new ScrapeError('Myntra Product API returned a different product ID', 'parse');
@@ -353,26 +441,71 @@ export function parseMyntraAPIProduct(body: string, url: string): ScrapedProduct
   // Deterministic size, with its own MRP. Never combine a price and MRP from different sizes.
   const selected = [...available].sort((a, b) => a.label.localeCompare(b.label))[0];
   const price = selected.discounted_price!;
-  const original = selected.mrp ?? price;
+  const original = available.every(
+    (size) => (size.mrp ?? price) === (selected.mrp ?? price),
+  )
+    ? (selected.mrp ?? price)
+    : price;
   if (original < price)
     throw new ScrapeError('Myntra selling price exceeds the selected size MRP', 'parse');
-  const brand = product.brand?.trim();
+  const brand = brandName(product.brand);
+  const titleVolume = normalizedValue(product.name).match(/\b(\d+(?:\.\d+)?ml)\b/)?.[1];
+  if (
+    available.some((size) => {
+      const label = normalizedValue(size.label);
+      return /^\d+(?:\.\d+)?ml$/.test(label) && titleVolume && label !== titleVolume;
+    })
+  )
+    throw new ScrapeError('Myntra size quantity conflicts with product title', 'parse');
   const title =
     brand && !product.name.toLowerCase().startsWith(brand.toLowerCase())
       ? `${brand} ${product.name}`
       : product.name;
+  const image = product.images
+    ?.map((value) => {
+      try {
+        const url = new URL(value);
+        if (
+          !['http:', 'https:'].includes(url.protocol) ||
+          url.hostname !== 'assets.myntassets.com' ||
+          url.username ||
+          url.password ||
+          url.port
+        )
+          return '';
+        url.protocol = 'https:';
+        return url.toString();
+      } catch {
+        return '';
+      }
+    })
+    .find(Boolean);
+  if (!image)
+    throw new ScrapeError(
+      'Myntra images: main-product image missing or invalid',
+      'parse',
+    );
   return {
     url,
     store: 'myntra.com',
     storeName: 'Myntra',
     title,
+    brand,
+    comparisonIdentityVerified: Boolean(brand) && available.length === 1,
+    variant:
+      categoryFor(title) === 'perfume' && available.length === 1
+        ? titleVolume
+        : undefined,
     currency: '₹',
-    image: product.images?.find((image) => /^https?:\/\//.test(image)) ?? '',
+    image,
     currentPrice: price,
     originalPrice: original,
     discountRate: Math.round(((original - price) / original) * 100),
     category: brand || 'General',
-    description: `Myntra product ${id}. Price for size: ${selected.label}.`,
+    description:
+      available.length === 1
+        ? `Myntra product ${id}. Price for size: ${selected.label}.`
+        : `Myntra product ${id}. No selected size; price common to available sizes.`,
     isOutOfStock: false,
     stars: product.overall_rating ?? 0,
     reviewsCount: product.ratings_count ?? 0,
