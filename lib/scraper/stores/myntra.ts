@@ -135,7 +135,8 @@ const realProduct = z.object({
     discountedPrice: money,
     netQuantity: z
       .array(z.object({ quantity: money, unit: z.string(), type: z.string().optional() }))
-      .optional(),
+      .optional()
+      .nullable(),
     discount: z
       .object({ discountId: z.string().nullable().optional() })
       .nullable()
@@ -351,18 +352,22 @@ function parseRealMyntraProduct(raw: unknown, url: string, id: string): ScrapedP
   const volumeCandidates = [...titleVolumes, ...netVolumes];
   if (new Set(volumeCandidates).size > 1)
     fail('Myntra title and selected seller quantity conflict');
+  // The main title may contradict seller quantity, but cannot manufacture it.
   const selectedVolume =
-    volumeCandidates.length === 1 ||
-    (volumeCandidates.length > 1 &&
-      volumeCandidates.every((v) => v === volumeCandidates[0]))
-      ? volumeCandidates[0]
+    netVolumes.length &&
+    netVolumes.every(
+      (value) => value !== undefined && value > 0 && value === netVolumes[0],
+    )
+      ? netVolumes[0]
       : undefined;
   return {
     url,
     store: 'myntra.com',
     storeName: 'Myntra',
     brand: brandName(p.brand),
-    comparisonIdentityVerified: Boolean(brandName(p.brand)),
+    comparisonIdentityVerified:
+      Boolean(brandName(p.brand)) &&
+      (categoryFor(p.name) !== 'perfume' || selectedVolume !== undefined),
     variant: selectedVolume ? `${selectedVolume}ml` : undefined,
     title: p.name,
     currency: '₹',
