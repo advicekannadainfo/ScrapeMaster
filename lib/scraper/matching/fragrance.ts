@@ -1,3 +1,5 @@
+import { volumeMl, selectedVolumeFields } from './selected-volume';
+export { volumeMl } from './selected-volume';
 import { fragranceContext } from './context';
 import {
   brandKey,
@@ -25,13 +27,6 @@ const fact = (
   field: string,
   scope: IdentityFact['scope'],
 ): IdentityFact => ({ value, field, scope });
-export function volumeMl(value: string): number | undefined {
-  const match =
-    /^\s*(\d+(?:\.\d+)?)\s*(ml|millilit(?:er|re)s?|l|lit(?:er|re)s?)\s*$/i.exec(value);
-  if (!match) return;
-  const n = Number(match[1]) * (/^(l|lit)/i.test(match[2]) ? 1000 : 1);
-  return Number.isFinite(n) && n > 0 ? n : undefined;
-}
 function titleVolumes(title: string) {
   return [
     ...title
@@ -76,7 +71,7 @@ const allowedFields: Record<string, string[]> = {
     'product_information.Fragrance Concentration',
     'main.title',
   ],
-  flipkart: ['product_results.brand', 'specifications.General.Quantity', 'main.title'],
+  flipkart: ['product_results.brand', ...selectedVolumeFields.flipkart, 'main.title'],
   'myntra.com': ['product_results.brand', 'selectedSeller.netQuantity', 'main.title'],
 };
 export function readCanonicalIdentity(value: unknown): CanonicalIdentity | undefined {
@@ -127,7 +122,9 @@ export function readCanonicalIdentity(value: unknown): CanonicalIdentity | undef
           !(
             e.source.store === 'amazon'
               ? [volumeField, 'product_information.Package Size Name']
-              : [volumeField]
+              : e.source.store === 'flipkart'
+                ? [...selectedVolumeFields.flipkart]
+                : [volumeField]
           ).includes(e.selected.volume.field)))
     )
       return;

@@ -51,6 +51,9 @@ describe('searchStores', () => {
         verified: 0,
         reason: 'no-search-results',
         sourceEvidence: 'eligible',
+        sourceConfidence: 'legacy-only',
+        sourceIssues: ['canonical-evidence-missing'],
+        sourceVolumeEvidence: { state: 'missing' },
         sourceIndependentlyValidated: false,
         profile: 'fragrance-v1',
         confidence: 'none',
@@ -61,6 +64,8 @@ describe('searchStores', () => {
           truncated: false,
         },
         rejections: {},
+        identityAssessment: { verified: 0, mismatch: 0, insufficient: 0 },
+        identityReasons: {},
       },
       {
         store: 'flipkart',
@@ -69,6 +74,9 @@ describe('searchStores', () => {
         verified: 0,
         reason: 'insufficient-identity',
         sourceEvidence: 'eligible',
+        sourceConfidence: 'legacy-only',
+        sourceIssues: ['canonical-evidence-missing'],
+        sourceVolumeEvidence: { state: 'missing' },
         sourceIndependentlyValidated: false,
         profile: 'fragrance-v1',
         confidence: 'none',
@@ -79,6 +87,8 @@ describe('searchStores', () => {
           truncated: false,
         },
         rejections: { 'insufficient-identity': 1 },
+        identityAssessment: { verified: 0, mismatch: 0, insufficient: 1 },
+        identityReasons: { 'selected-evidence-missing': 1 },
       },
     ]);
     expect(result.offers.map((o) => o.store)).toEqual(['myntra.com']);

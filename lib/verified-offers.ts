@@ -7,7 +7,7 @@ import {
   titleAttributes,
 } from './scraper/product-identity';
 import type { Offer } from '@/types';
-import { isAccessory, isPlausiblePrice } from './scraper/match';
+import { isAccessory, comparisonPriceStatus } from './scraper/match';
 import { matchingFetchedFragrance } from './scraper/product-candidate-match';
 
 export type MatchIdentity = {
@@ -259,7 +259,7 @@ export function verifiedOffers(
       }
       return (
         isVerifiedProductMatch(product, offer) &&
-        isPlausiblePrice(offer.price, product.currentPrice)
+        comparisonPriceStatus(offer.price, product.currentPrice) === 'accepted'
       );
     })
     .sort((a, b) => a.price - b.price);

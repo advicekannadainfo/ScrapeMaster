@@ -1,9 +1,9 @@
-import { independentFragrance } from './matching/fragrance';
+import { readCanonicalIdentity, independentFragrance } from './matching/fragrance';
 import { categoryDecision } from './matching';
 import { compatibleAttributes, titleAttributes, categoryFor } from './product-identity';
 import 'server-only';
 import type { Offer, ScrapedProduct } from '@/types';
-import { isAccessory, isPlausiblePrice, titleSimilarity } from './match';
+import { isAccessory, comparisonPriceStatus, titleSimilarity } from './match';
 import { regionFromCurrency, searchableStores } from './stores';
 import {
   isVerifiedMatch,
@@ -60,6 +60,11 @@ export async function findOffersWithDiagnostics(
     profile?: string;
     confidence?: string;
     sourceIndependentlyValidated?: boolean;
+    sourceConfidence?: 'independent-main' | 'legacy-only' | 'insufficient-selected';
+    sourceIssues?: string[];
+    sourceVolumeEvidence?: { state: 'independent-selected' | 'missing'; field?: string };
+    identityAssessment?: { verified: number; mismatch: number; insufficient: number };
+    identityReasons?: Record<string, number>;
   }[] = [];
 
   const results = await Promise.allSettled(
@@ -76,6 +81,10 @@ export async function findOffersWithDiagnostics(
         DISCOVERY_POOL_LIMIT,
       );
       const rejections: Record<string, number> = {};
+      const identityAssessment = { verified: 0, mismatch: 0, insufficient: 0 };
+      const identityReasons: Record<string, number> = {};
+      const sourceCanonical = readCanonicalIdentity(product.canonicalIdentity);
+      const independent = independentFragrance(product.canonicalIdentity);
       const sourceEligible =
         product.comparisonIdentityVerified !== false ||
         independentFragrance(product.canonicalIdentity);
@@ -94,23 +103,20 @@ export async function findOffersWithDiagnostics(
             !identityFieldsAgree(product, offer) ||
             Object.entries(a).some(([key, value]) => b[key] && b[key] !== value);
           let reason: string | undefined;
+          let identityVerified = false;
           if (!sourceEligible) reason = 'insufficient-selected-identity';
-          else if (offer.currency !== product.currency) reason = 'currency-rejected';
           else if (isAccessory(offer.title, product.title)) reason = 'accessory-rejected';
-          else if (!isPlausiblePrice(offer.price, product.currentPrice))
-            reason = 'price-rejected';
           else if (profile) {
-            reason = isVerifiedProductMatch(product, offer)
-              ? undefined
-              : profile.status === 'verified'
-                ? 'render-identity-rejected'
-                : profile.status === 'mismatch'
-                  ? 'explicit-mismatch'
-                  : profile.reason === 'concentration-ambiguous' ||
-                      profile.reason === 'declaration-conflict'
-                    ? 'ambiguous-concentration'
-                    : conflict
-                      ? 'explicit-mismatch'
+            identityVerified = isVerifiedProductMatch(product, offer);
+            if (!identityVerified)
+              reason =
+                profile.status === 'verified'
+                  ? 'render-identity-rejected'
+                  : profile.status === 'mismatch' || conflict
+                    ? 'explicit-mismatch'
+                    : profile.reason === 'concentration-ambiguous' ||
+                        profile.reason === 'declaration-conflict'
+                      ? 'ambiguous-concentration'
                       : 'insufficient-identity';
           } else if (conflict) reason = 'explicit-mismatch';
           else if (!(
@@ -118,6 +124,34 @@ export async function findOffersWithDiagnostics(
             (isVerifiedMatch(product, offer) || offer !== original)
           ))
             reason = 'insufficient-identity';
+          else identityVerified = isVerifiedProductMatch(product, offer);
+          const identityState = identityVerified
+            ? 'verified'
+            : reason === 'explicit-mismatch' || reason === 'accessory-rejected'
+              ? 'mismatch'
+              : 'insufficient';
+          identityAssessment[identityState]++;
+          const identityReason = identityVerified
+            ? 'verified'
+            : !sourceEligible
+              ? 'source-selection-unconfirmed'
+              : (profile?.reason ?? reason ?? 'identity-unconfirmed');
+          identityReasons[identityReason] = (identityReasons[identityReason] ?? 0) + 1;
+          // A price anomaly is reported only after identity is verified. It never
+          // certifies a candidate and never triggers paid confirmation automatically.
+          if (!reason) {
+            if (!identityVerified) reason = 'render-identity-rejected';
+            else if (offer.currency !== product.currency) reason = 'currency-rejected';
+            else {
+              const price = comparisonPriceStatus(offer.price, product.currentPrice);
+              if (price !== 'accepted')
+                reason = profile
+                  ? price
+                  : price === 'price-anomaly'
+                    ? 'price-rejected'
+                    : price;
+            }
+          }
           if (!reason && !verifiedOffers(product, [offer]).length)
             reason = 'render-identity-rejected';
           if (reason) {
@@ -143,7 +177,25 @@ export async function findOffersWithDiagnostics(
               ? Object.keys(rejections)[0]
               : 'mixed-rejections',
         sourceEvidence,
-        sourceIndependentlyValidated: independentFragrance(product.canonicalIdentity),
+        sourceIndependentlyValidated: independent,
+        sourceConfidence: independent
+          ? 'independent-main'
+          : sourceEligible
+            ? 'legacy-only'
+            : 'insufficient-selected',
+        sourceIssues: sourceCanonical?.issues ?? ['canonical-evidence-missing'],
+        sourceVolumeEvidence: {
+          state:
+            sourceCanonical?.source.kind === 'product' && sourceCanonical.selected.volume
+              ? 'independent-selected'
+              : 'missing',
+          ...(sourceCanonical?.source.kind === 'product' &&
+          sourceCanonical.selected.volume
+            ? { field: sourceCanonical.selected.volume.field }
+            : {}),
+        },
+        identityAssessment,
+        identityReasons,
         profile: categoryFor(product.title) === 'perfume' ? 'fragrance-v1' : 'legacy',
         confidence: ranked[0]?.confidence ?? 'none',
         discovery,
@@ -231,6 +283,11 @@ export async function findOffers(
         verified: diagnostic.verified,
         sourceEvidence: diagnostic.sourceEvidence,
         sourceIndependentlyValidated: diagnostic.sourceIndependentlyValidated,
+        sourceConfidence: diagnostic.sourceConfidence,
+        sourceIssues: diagnostic.sourceIssues,
+        sourceVolumeEvidence: diagnostic.sourceVolumeEvidence,
+        identityAssessment: diagnostic.identityAssessment,
+        identityReasons: diagnostic.identityReasons,
         profile: diagnostic.profile,
         confidence: diagnostic.confidence,
         discovery: diagnostic.discovery,

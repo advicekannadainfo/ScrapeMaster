@@ -1,4 +1,5 @@
-import { mainFragranceIdentity, volumeMl } from '../matching/fragrance';
+import { resolveSelectedVolume } from '../matching/selected-volume';
+import { mainFragranceIdentity } from '../matching/fragrance';
 import { observeProduct } from '../matching/observations';
 import { mainEvidence } from '../exact-evidence';
 import { mainProductDescription } from '@/lib/product-presentation';
@@ -75,7 +76,8 @@ function volume(value: string) {
 /** Direct top-level India payload only. Related sections are deliberately never traversed. */
 export function parseAmazonAPIProduct(body: string, input: string): ScrapedProduct {
   const target = amazonIndiaProductInput(input);
-  const result = amazonSchema.safeParse(readJSON(body));
+  const raw = readJSON(body);
+  const result = amazonSchema.safeParse(raw);
   if (!result.success)
     return fail(
       `Amazon Product API fields are missing or invalid: ${productValidationDiagnostic(result.error, ['title', 'main_title', 'product_information', 'ASIN', 'Brand', 'Item Volume', 'Package Size Name', 'extracted_price', 'price_symbol', 'price', 'main_image', 'availability_status', 'purchase_options', 'single_offer', 'stock', 'extracted_average_rating', 'extracted_total_reviews'])}`,
@@ -158,28 +160,28 @@ export function parseAmazonAPIProduct(body: string, input: string): ScrapedProdu
       currency: '₹',
       isOutOfStock: !available,
     },
-    (readJSON(body) as { product_information: Record<string, unknown> })
-      .product_information,
+    (raw as { product_information: Record<string, unknown> }).product_information,
     'product_information',
     [target.asin],
   );
+  const selectedVolumeEvidence = resolveSelectedVolume('amazon', raw);
   const canonicalIdentity = mainFragranceIdentity({
     title: p.title,
     brand: p.product_information.Brand ?? undefined,
     store: 'amazon',
     url: target.url,
-    selectedVolume: volumes[0],
-    volumeField: p.product_information['Item Volume']
-      ? 'product_information.Item Volume'
-      : 'product_information.Package Size Name',
-    pack: (readJSON(body) as { product_information: Record<string, unknown> })
-      .product_information['Number of Items'],
+    selectedVolume: selectedVolumeEvidence.volume,
+    volumeField: selectedVolumeEvidence.field ?? 'product_information.Item Volume',
+    pack: (raw as { product_information: Record<string, unknown> }).product_information[
+      'Number of Items'
+    ],
     declaration:
-      typeof (readJSON(body) as { product_information: Record<string, unknown> })
+      typeof (raw as { product_information: Record<string, unknown> })
         .product_information['Fragrance Concentration'] === 'string'
         ? String(
-            (readJSON(body) as { product_information: Record<string, unknown> })
-              .product_information['Fragrance Concentration'],
+            (raw as { product_information: Record<string, unknown> }).product_information[
+              'Fragrance Concentration'
+            ],
           )
         : undefined,
   });
@@ -641,17 +643,14 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
       'specifications.General',
       [target.pid ?? '', p.sku],
     );
-    const general = (
-      original.specifications as { General?: Record<string, unknown> } | undefined
-    )?.General;
+    const selectedVolumeEvidence = resolveSelectedVolume('flipkart', raw);
     const canonicalIdentity = mainFragranceIdentity({
       title: p.title,
       brand: p.brand,
       store: 'flipkart',
       url: target.url,
-      selectedVolume:
-        typeof general?.Quantity === 'string' ? volumeMl(general.Quantity) : undefined,
-      volumeField: 'specifications.General.Quantity',
+      selectedVolume: selectedVolumeEvidence.volume,
+      volumeField: selectedVolumeEvidence.field ?? 'specifications.General.Quantity',
     });
     return {
       canonicalIdentity,

@@ -22,7 +22,7 @@ export function fragranceContext(input: string) {
         );
       const matches = [
         ...clause.matchAll(
-          /\b(edp|edt|edc|extrait|intense|elixir|perfume oil|body mist|body spray|deodorant|attar)\b/g,
+          /\b(edp|edt|edc|extrait|intense|elixir|pour homme|pour femme|for him|for her|perfume oil|body mist|body spray|deodorant|attar)\b/g,
         ),
       ];
       const relevant = matches.filter((m) => !comparison || m.index! < comparison.index);
@@ -56,7 +56,8 @@ export function fragranceContext(input: string) {
           excluded++;
           if (negative && !comparative) negated.add(value);
         } else if (/^(edp|edt|edc|extrait)$/.test(value)) concentrations.add(value);
-        else if (/^(intense|elixir)$/.test(value)) editions.add(value);
+        else if (/^(intense|elixir|pour-homme|pour-femme|for-him|for-her)$/.test(value))
+          editions.add(value);
         else formulations.add(value);
       }
       return selected;

@@ -1,3 +1,4 @@
+import { resolveSelectedVolume } from '../matching/selected-volume';
 import { mainFragranceIdentity } from '../matching/fragrance';
 import { observeProduct } from '../matching/observations';
 import { mainProductDescription } from '@/lib/product-presentation';
@@ -365,13 +366,14 @@ function parseRealMyntraProduct(raw: unknown, url: string, id: string): ScrapedP
     )
       ? netVolumes[0]
       : undefined;
+  const selectedVolumeEvidence = resolveSelectedVolume('myntra.com', raw);
   const canonicalIdentity = mainFragranceIdentity({
     title: p.name,
     brand: brandName(p.brand),
     store: 'myntra.com',
     url,
-    selectedVolume,
-    volumeField: 'selectedSeller.netQuantity',
+    selectedVolume: selectedVolumeEvidence.volume,
+    volumeField: selectedVolumeEvidence.field ?? 'selectedSeller.netQuantity',
   });
   return {
     canonicalIdentity,

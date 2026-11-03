@@ -37,6 +37,21 @@ export function isPlausiblePrice(offer: number, reference: number) {
   return offer >= reference * 0.4 && offer <= reference * 2.5;
 }
 
+/** Identity does not authenticate an unusual selling price. No ratio bypass. */
+export function comparisonPriceStatus(
+  offer: number,
+  reference: number,
+): 'accepted' | 'invalid-price' | 'price-anomaly' {
+  if (
+    !Number.isFinite(offer) ||
+    offer <= 0 ||
+    !Number.isFinite(reference) ||
+    reference <= 0
+  )
+    return 'invalid-price';
+  return isPlausiblePrice(offer, reference) ? 'accepted' : 'price-anomaly';
+}
+
 function stem(token: string) {
   if (/\d/.test(token) || token.length < 6) return token;
   return token.replace(/(ations?|ions?|ings?|ed|es|s)$/, '');

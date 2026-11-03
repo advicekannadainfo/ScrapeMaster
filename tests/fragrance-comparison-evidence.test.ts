@@ -220,7 +220,7 @@ describe('independent fragrance discovery evidence, offline only', () => {
       rejections: {
         'explicit-mismatch': 1,
         'insufficient-identity': 1,
-        'price-rejected': 1,
+        'price-anomaly': 1,
         'currency-rejected': 1,
       },
     });

@@ -1,3 +1,4 @@
+import { comparisonPriceStatus } from '@/lib/scraper/match';
 import 'server-only';
 import ProductModel from '@/lib/models/product.model';
 import type { Offer } from '@/types';
@@ -57,6 +58,7 @@ export async function fragranceProductLinks(source: TrackedSource) {
     .lean();
   const links = new Map(prior.map((p) => [p.url, p]));
   const offers = new Map<string, Offer>();
+  let priceAnomalies = 0;
   for (const record of records) {
     const candidate = {
       ...record,
@@ -87,6 +89,10 @@ export async function fragranceProductLinks(source: TrackedSource) {
       offers.has(record.store)
     )
       continue;
+    if (comparisonPriceStatus(record.currentPrice, source.currentPrice) !== 'accepted') {
+      priceAnomalies++;
+      continue;
+    }
     offers.set(record.store, {
       store: record.store,
       storeName: record.storeName,
@@ -106,6 +112,7 @@ export async function fragranceProductLinks(source: TrackedSource) {
     candidates: records.length,
     linked: Math.min(links.size, 40),
     freshOffers: offers.size,
+    priceAnomalies,
   });
   return { links: [...links.values()].slice(0, 40), offers: [...offers.values()] };
 }
