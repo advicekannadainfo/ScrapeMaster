@@ -1,8 +1,13 @@
+import { compatibleAttributes } from './product-identity';
 import 'server-only';
 import type { Offer, ScrapedProduct } from '@/types';
 import { isAccessory, isPlausiblePrice, titleSimilarity } from './match';
 import { regionFromCurrency, searchableStores } from './stores';
-import { isVerifiedMatch, comparisonSearchQuery } from '@/lib/verified-offers';
+import {
+  isVerifiedMatch,
+  comparisonSearchQuery,
+  identityFieldsAgree,
+} from '@/lib/verified-offers';
 import {
   enrichSearchFragranceIdentity,
   fragranceDiscoveryQuery,
@@ -49,7 +54,10 @@ export async function findOffersWithDiagnostics(
             score: titleSimilarity(product.title, offer.title),
             // Only a strict title match OR explicit, independently checked
             // brand/scent/title-size evidence may qualify a search result.
-            verified: isVerifiedMatch(product, offer) || offer !== original,
+            verified:
+              compatibleAttributes(product, offer) &&
+              identityFieldsAgree(product, offer) &&
+              (isVerifiedMatch(product, offer) || offer !== original),
           };
         })
         .filter(

@@ -73,14 +73,11 @@ describe('full sanitized real Flipkart Product response', () => {
         ),
       ).toBe(false);
   });
-  it.each(['price', 'sku', 'availability', 'brand', 'ratings_reviews'])(
-    'rejects missing %s',
-    (field) => {
-      const data = structuredClone(fixture);
-      Reflect.deleteProperty(data.product_results, field);
-      expect(() => inspect(data)).toThrow();
-    },
-  );
+  it.each(['price', 'sku', 'availability', 'brand'])('rejects missing %s', (field) => {
+    const data = structuredClone(fixture);
+    Reflect.deleteProperty(data.product_results, field);
+    expect(() => inspect(data)).toThrow();
+  });
   it.each(['₹0', '$250', '₹250 off', '₹2,50', '250'])(
     'rejects invalid selling price %s',
     (price) => {

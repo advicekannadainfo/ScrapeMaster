@@ -1,3 +1,4 @@
+import { compatibleAttributes, normalizedValue } from './scraper/product-identity';
 import type { Offer } from '@/types';
 import { isAccessory, isPlausiblePrice } from './scraper/match';
 import { matchingFetchedFragrance } from './scraper/product-candidate-match';
@@ -10,6 +11,20 @@ export type MatchIdentity = {
   gtin?: string;
   mpn?: string;
 };
+
+/** Flexible category matching must never override contradictory identifiers. */
+export function identityFieldsAgree(source: MatchIdentity, candidate: MatchIdentity) {
+  return (['brand', 'model', 'variant', 'gtin', 'mpn'] as const).every((key) => {
+    const left = source[key],
+      right = candidate[key];
+    if (!left || !right) return true;
+    const normalize = (value: string) =>
+      key === 'brand'
+        ? value.toLowerCase().replace(/[^a-z0-9]/g, '')
+        : normalizedValue(value);
+    return normalize(left) === normalize(right);
+  });
+}
 
 // Marketing/category words provide no evidence that two listings are identical.
 // Preserve names, colours, model suffixes, quantities and concentration variants.
@@ -49,6 +64,7 @@ export function comparisonSearchQuery(title: string) {
 
 /** Conservative title evidence. Missing details do not prove an exact match. */
 export function isVerifiedMatch(source: MatchIdentity, candidate: MatchIdentity) {
+  if (!compatibleAttributes(source, candidate)) return false;
   for (const key of ['brand', 'model', 'variant', 'gtin', 'mpn'] as const) {
     if (
       source[key] &&
@@ -89,9 +105,11 @@ type Source = MatchIdentity & {
 /** Exact title checks for search; independently fetched same-size fragrance pages may
  * additionally use explicit brand, selected variant and full scent-name evidence. */
 export function isVerifiedProductMatch(source: MatchIdentity, candidate: MatchIdentity) {
+  if (!identityFieldsAgree(source, candidate)) return false;
   return (
     isVerifiedMatch(source, candidate) ||
-    (!isAccessory(candidate.title, source.title) &&
+    (compatibleAttributes(source, candidate) &&
+      !isAccessory(candidate.title, source.title) &&
       !isAccessory(source.title, candidate.title) &&
       matchingFetchedFragrance(source, candidate))
   );

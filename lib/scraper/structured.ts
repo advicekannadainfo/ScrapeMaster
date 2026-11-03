@@ -17,6 +17,16 @@ export type StructuredProduct = {
 
 type Json = Record<string, unknown>;
 
+/** Unknown, preorder and backorder must never imply immediately available stock. */
+function stockEvidence(value: unknown): boolean | undefined {
+  if (typeof value !== 'string') return undefined;
+  const status = value.trim().split(/[\/#]/).pop()?.toLowerCase().replace(/[ _-]/g, '');
+  if (status === 'instock') return true;
+  if (['outofstock', 'soldout', 'discontinued', 'oos'].includes(status ?? ''))
+    return false;
+  return undefined;
+}
+
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$',
   INR: '₹',
@@ -113,9 +123,7 @@ export function extractJsonLd($: CheerioAPI): StructuredProduct {
       currency: currencySymbol(
         text(offer?.priceCurrency) ?? text(spec[0]?.priceCurrency),
       ),
-      inStock: offer?.availability
-        ? !/outofstock|soldout|discontinued/i.test(String(offer.availability))
-        : undefined,
+      inStock: stockEvidence(offer?.availability),
       stars: num(rating?.ratingValue),
       reviewsCount: num(rating?.reviewCount ?? rating?.ratingCount),
       category: text(product.category)?.split(/[>/]/).pop()?.trim(),
@@ -152,9 +160,7 @@ export function extractMeta($: CheerioAPI): StructuredProduct {
         'og:availability',
         'availability',
       );
-      return availability
-        ? !/out ?of ?stock|oos|sold ?out/i.test(availability)
-        : undefined;
+      return stockEvidence(availability);
     })(),
   };
 }

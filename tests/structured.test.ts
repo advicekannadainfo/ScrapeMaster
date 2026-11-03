@@ -69,3 +69,47 @@ describe('generic adapter', () => {
     expect(storeFromHost('shop.acme.co').id).toBe('acme.co');
   });
 });
+
+describe('generic stock and currency evidence', () => {
+  it('rejects missing stock rather than treating absence as in stock', () => {
+    expect(() =>
+      parseGenericProduct(
+        metaOnly.replace(
+          '<meta property="product:availability" content="out of stock" />',
+          '',
+        ),
+        'https://shop.example.in/p/linen',
+      ),
+    ).toThrow(/stock or currency evidence/);
+  });
+  it('rejects missing currency rather than assuming dollars', () => {
+    expect(() =>
+      parseGenericProduct(
+        metaOnly.replace('<meta property="product:price:currency" content="INR" />', ''),
+        'https://shop.example.in/p/linen',
+      ),
+    ).toThrow(/stock or currency evidence/);
+  });
+});
+
+describe('unknown availability cannot become verified stock', () => {
+  it.each(['unknown', 'PreOrder', 'BackOrder', 'LimitedAvailability'])(
+    'rejects unknown metadata availability %s',
+    (status) => {
+      expect(() =>
+        parseGenericProduct(
+          metaOnly.replace('out of stock', status),
+          'https://shop.example.in/p/linen',
+        ),
+      ).toThrow(/stock or currency evidence/);
+    },
+  );
+  it('rejects unknown schema.org availability', () => {
+    expect(() =>
+      parseGenericProduct(
+        jsonLd.replace('schema.org/InStock', 'schema.org/Unknown'),
+        'https://www.bestbuy.com/site/buds/123.p',
+      ),
+    ).toThrow(/stock or currency evidence/);
+  });
+});

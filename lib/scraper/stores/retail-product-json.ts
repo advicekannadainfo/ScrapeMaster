@@ -3,6 +3,7 @@ import { ScrapeError } from '../errors';
 import { amazonIndiaProductInput, flipkartProductInput } from '../retail-product-input';
 import type { ScrapedProduct } from '@/types';
 import { cachedFlipkartSearch } from '../flipkart-evidence';
+import { categoryFor, selectedAttributes, titleAttributes } from '../product-identity';
 import { isVerifiedMatch } from '@/lib/verified-offers';
 
 const text = z.string().trim().min(1);
@@ -72,14 +73,28 @@ export function parseAmazonAPIProduct(body: string, input: string): ScrapedProdu
   const available = stock(p.availability_status);
   if (available !== stock(p.purchase_options.single_offer.stock))
     fail('Amazon selected-offer stock conflicts with product stock');
+  const isPerfume = categoryFor(p.title) === 'perfume';
+  const packageSize = p.product_information['Package Size Name'];
   const volumes = [
     p.product_information['Item Volume'],
-    p.product_information['Package Size Name'],
+    isPerfume ||
+    (packageSize &&
+      /^\d+(?:\.\d+)?\s*(ml|millilitres?|milliliters?|l|litres?|liters?)$/i.test(
+        packageSize,
+      ))
+      ? packageSize
+      : undefined,
   ]
     .filter((s): s is string => Boolean(s))
     .map(volume);
   if (new Set(volumes).size > 1) fail('Amazon selected quantity fields conflict');
-  let title = p.main_title ?? p.title;
+  let title = isPerfume ? (p.main_title ?? p.title) : p.title;
+  if (
+    !isPerfume &&
+    packageSize &&
+    !title.toLowerCase().includes(packageSize.toLowerCase())
+  )
+    title += ` ${packageSize}`;
   // If both titles state quantities, neither may contradict the selected variant.
   const titleVolumes = [p.title, p.main_title ?? ''].flatMap((t) =>
     [
@@ -148,22 +163,26 @@ const realFlipkartSchema = z.object({
     main_image: z.string().url(),
     sku: text.regex(/^[A-Z0-9]+$/),
     availability: z.enum(['InStock', 'OutOfStock']),
-    ratings_reviews: z.object({
-      rating: numericText.refine((n) => n <= 5),
-      ratings_count: numericText.refine(Number.isInteger),
-    }),
+    ratings_reviews: z
+      .object({
+        rating: numericText.refine((n) => n <= 5).optional(),
+        ratings_count: numericText.refine(Number.isInteger).optional(),
+      })
+      .optional(),
     specifications: z.object({
-      General: z.object({
-        Brand: text,
-        'Model Name': text,
-        Quantity: text,
-        'Net Quantity': text,
-      }),
+      General: z
+        .object({
+          Brand: text.optional(),
+          'Model Name': text,
+          Quantity: text.optional(),
+          'Net Quantity': text.optional(),
+        })
+        .catchall(z.string()),
       'Product Highlights': z.object({ Quantity: text }).optional(),
     }),
-    highlights: z.array(text),
-    variants: z.array(z.unknown()).max(0),
-    display_sizes: z.array(z.unknown()).max(0),
+    highlights: z.array(text).default([]),
+    variants: z.array(z.unknown()).max(0).default([]),
+    display_sizes: z.array(z.unknown()).max(0).default([]),
   }),
 });
 
@@ -172,12 +191,21 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
   const target = flipkartProductInput(input);
   const raw = readJSON(body);
   const result = realFlipkartSchema.safeParse(raw);
-  if (!result.success) fail('Flipkart real Product API fields are missing or invalid');
+  if (!result.success)
+    fail(
+      `Flipkart real Product API fields are missing or invalid: ${result.error.issues
+        .slice(0, 8)
+        .map(
+          (issue) =>
+            `${issue.path.map((part) => (['product_results', 'title', 'brand', 'price', 'previous_price', 'main_image', 'sku', 'availability', 'ratings_reviews', 'rating', 'ratings_count', 'specifications', 'General', 'Brand', 'Model Name', 'Quantity', 'Net Quantity', 'highlights', 'variants', 'display_sizes', 'Product Highlights'].includes(String(part)) ? part : '[field]')).join('.')}:${issue.code}`,
+        )
+        .join('; ')}`,
+    );
   const p = result.data.product_results;
   const general = p.specifications.General;
   const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (
-    compact(p.brand) !== compact(general.Brand) ||
+    (general.Brand !== undefined && compact(p.brand) !== compact(general.Brand)) ||
     !compact(p.title).startsWith(compact(p.brand)) ||
     !compact(p.title).includes(compact(general['Model Name']))
   )
@@ -201,6 +229,17 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
         fail('Flipkart response canonical URL conflicts with requested URL');
     }
   }
+  const category = categoryFor(p.title);
+  let attributes: Record<string, string>;
+  try {
+    attributes = selectedAttributes(p.title, general as Record<string, string>);
+  } catch (error) {
+    return fail(
+      error instanceof Error && error.message.includes('unsupported')
+        ? 'Flipkart selected quantity format is unsupported'
+        : 'Flipkart selected attribute conflicts with title',
+    );
+  }
   const quantities = [
     general.Quantity,
     general['Net Quantity'],
@@ -215,21 +254,41 @@ export function inspectFlipkartAPIProduct(body: string, input: string) {
     ].map((m) => m[0]),
   ]
     .filter((s): s is string => s !== undefined)
+    .filter(
+      (s) =>
+        category === 'perfume' ||
+        /^\d+(?:\.\d+)?\s*(ml|millilitres?|milliliters?|l|litres?|liters?)$/i.test(s),
+    )
     .map(volume);
-  if (new Set(quantities).size !== 1) fail('Flipkart selected quantity fields conflict');
+  if (new Set(quantities).size > 1) fail('Flipkart selected quantity fields conflict');
+  if (category === 'perfume' && !quantities.length)
+    fail('Flipkart selected perfume quantity is missing');
+  if (quantities.length) {
+    const selected = `${quantities[0]}ml`;
+    if (attributes.quantity && attributes.quantity !== selected)
+      fail('Flipkart selected quantity fields conflict');
+    attributes.quantity = selected;
+  }
   return {
     title: p.title,
     brand: p.brand,
     model: general['Model Name'],
     sku: p.sku,
-    variant: `${quantities[0]}ml`,
+    variant:
+      category === 'perfume' && quantities.length
+        ? `${quantities[0]}ml`
+        : Object.entries(attributes)
+            .sort()
+            .map(([key, value]) => `${key}=${value}`)
+            .join('; ') || undefined,
+    category,
     currentPrice: p.price,
     originalPrice: p.previous_price,
     currency: '₹' as const,
     image: image(p.main_image),
     isOutOfStock: p.availability === 'OutOfStock',
-    stars: p.ratings_reviews.rating,
-    reviewsCount: p.ratings_reviews.ratings_count,
+    stars: p.ratings_reviews?.rating ?? 0,
+    reviewsCount: p.ratings_reviews?.ratings_count ?? 0,
     requestedIdentityVerified: false as const,
   };
 }
@@ -254,6 +313,15 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
     // Provider URL binding is trusted, but requires independent semantic evidence
     // from the descriptive URL slug or a previously fetched Search row.
     const slug = decodeURIComponent(new URL(target.url).pathname.split('/p/')[0]);
+    const requestedAttributes = titleAttributes(slug.replace(/-/g, ' '));
+    const returnedAttributes = titleAttributes(`${p.title} ${p.variant ?? ''}`);
+    for (const [field, value] of Object.entries(requestedAttributes))
+      if (returnedAttributes[field] && value !== returnedAttributes[field])
+        fail(
+          field === 'quantity'
+            ? 'Flipkart request URL quantity conflicts with response'
+            : 'Flipkart request URL variant conflicts with response',
+        );
     const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
     const noise = new Set(
       'perfume perfumes men women for and with long lasting notes fragrance unisex'.split(
@@ -267,7 +335,7 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
     const slugWords = new Set(slug.toLowerCase().split(/[^a-z0-9]+/));
     const slugEvidence =
       compact(slug).includes(compact(p.brand)) &&
-      new Set(modelWords).size >= 2 &&
+      new Set(modelWords).size >= 1 &&
       modelWords.every((w) => slugWords.has(w));
     const slugVolumes = [
       ...slug
@@ -297,7 +365,7 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
         ? Math.round((1 - p.currentPrice / p.originalPrice) * 100)
         : 0,
       description: `URL-based provider response; ${cached ? 'cached Search' : 'descriptive URL'} corroboration. Response SKU ${p.sku}; response PID not independently verified.`,
-      category: 'General',
+      category: p.category,
       isOutOfStock: p.isOutOfStock,
       stars: p.stars,
       reviewsCount: p.reviewsCount,

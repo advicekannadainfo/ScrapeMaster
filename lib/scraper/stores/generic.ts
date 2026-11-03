@@ -51,13 +51,21 @@ export function parseGenericProduct(html: string, url: string) {
     );
   }
 
+  if (data.inStock === undefined || !data.currency)
+    throw new ScrapeError(
+      'Product stock or currency evidence is missing; offer unverified',
+      'parse',
+    );
+  if (!Number.isFinite(data.price) || data.price <= 0)
+    throw new ScrapeError('Product has no valid positive price', 'parse');
   const original = Math.max(data.originalPrice ?? 0, data.price);
   return {
     url,
     store: store.id,
     storeName: store.name,
     title: data.title,
-    currency: data.currency ?? '$',
+    currency: data.currency,
+    brand: data.brand,
     image: data.image ? new URL(data.image, url).toString() : '',
     currentPrice: data.price,
     originalPrice: original,
