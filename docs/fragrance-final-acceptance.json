@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "baseline": "9e4489ac369e64c3a7893581f4e8cfa00a3ae0f3",
+  "decision": "NOT READY",
+  "scope": "Amazon India, Flipkart and Myntra; independently evidenced exact selected fragrance variants",
+  "newPaidRequests": 0,
+  "productionBehaviorChanged": false,
+  "acceptance": [
+    {
+      "id": "source-binding",
+      "required": "Requested retailer product ID/URL, seller/SKU where supplied, main INR price, image and explicit stock agree",
+      "status": "PASS-OFFLINE",
+      "evidence": [
+        "tests/retail-product-full.test.ts",
+        "tests/myntra-real.test.ts",
+        "tests/flipkart-product-real.test.ts"
+      ]
+    },
+    {
+      "id": "positive-selected-pairs",
+      "required": "Multiple named fragrances with independent selected 30ml evidence match across all six directed store pairs",
+      "status": "PASS-OFFLINE",
+      "evidence": [
+        "tests/fragrance-reliability-matrix.test.ts",
+        "tests/fragrance-release-gates.test.ts"
+      ],
+      "provenance": "Synthetic transformations; includes Love Drunk, Old Money, Fresh Morning, Quiet Garden and Cedar Trail; not captured triples"
+    },
+    {
+      "id": "variant-rejection",
+      "required": "Reject wrong scent, brand, 20/30/100ml, EDP/EDT, oil/mist, editions, packs, testers, refills and bundles",
+      "status": "PASS-OFFLINE",
+      "evidence": [
+        "tests/fragrance-release-gates.test.ts",
+        "tests/fragrance-reliability-matrix.test.ts"
+      ]
+    },
+    {
+      "id": "missing-selected-proof",
+      "required": "Null/missing seller quantity, title/catalog/per-unit quantities cannot create independent Product selected-volume proof",
+      "status": "PASS-OFFLINE",
+      "evidence": [
+        "tests/myntra-null-net-quantity.test.ts",
+        "tests/fragrance-comparison-evidence.test.ts"
+      ]
+    },
+    {
+      "id": "persistence",
+      "required": "BSON optional unknowns stay unknown; provenance and source binding remain strict; stale prices do not renew identity links",
+      "status": "PASS-OFFLINE",
+      "evidence": [
+        "tests/canonical-storage-compatibility.test.ts",
+        "tests/fragrance-release-gates.test.ts"
+      ]
+    },
+    {
+      "id": "price-stock-safety",
+      "required": "Reject missing/invalid INR prices, anomalies, conflicting observations and explicit unavailable stock; saved Product observations expire after ten minutes",
+      "status": "PASS-OFFLINE",
+      "evidence": [
+        "tests/fragrance-release-gates.test.ts",
+        "tests/category-fragrance-profile.test.ts"
+      ]
+    },
+    {
+      "id": "budgets-preservation",
+      "required": "No extra paid hydration/retries; partial store failures preserve other offers; caches/manual links remain intact",
+      "status": "PASS-OFFLINE",
+      "evidence": [
+        "tests/fragrance-comparison-evidence.test.ts",
+        "tests/manual-compare-merge.test.ts",
+        "tests/discovery.test.ts",
+        "tests/provider-routes.test.ts"
+      ]
+    },
+    {
+      "id": "every-visible-offer-selected-proof",
+      "required": "Every displayed competitor is independently bound to the exact selected Product variant; listing title is never selected-SKU proof",
+      "status": "BLOCKED",
+      "blocker": "B1",
+      "evidence": ["tests/fragrance-discovery-gates.test.ts"],
+      "observed": "Existing compatibility policy can display listingOnly matches. The passing regression proves this limitation, not milestone compliance."
+    },
+    {
+      "id": "captured-discovery-recall",
+      "required": "Actual captured Search responses contain independently verifiable candidates and produce expected store diagnostics",
+      "status": "BLOCKED",
+      "blocker": "B2",
+      "observed": "Zero captured live Search fixtures; synthetic parser success does not establish recall"
+    },
+    {
+      "id": "captured-selected-triple",
+      "required": "Captured same-size Product responses agree across the three stores on selected quantity and affirmative formulation/pack declarations",
+      "status": "BLOCKED",
+      "blocker": "B1",
+      "observed": "Captured Amazon/Flipkart are 30ml and Myntra is 100ml; Amazon oil/pack declarations cannot be silently dropped"
+    },
+    {
+      "id": "every-visible-price-fresh",
+      "required": "Every retained offer has its own current bound price/stock observation; comparison time cannot renew an old price",
+      "status": "BLOCKED",
+      "blocker": "B3",
+      "observed": "Retained legacy/manual/search offers lack uniform per-offer observations; ten-minute saved Product checks do not cover all offers"
+    }
+  ],
+  "blockers": [
+    {
+      "id": "B1",
+      "classification": [
+        "missing-provider-selected-variant-evidence",
+        "fixable-code-eligibility-gap"
+      ],
+      "needed": "Actual main Product selected quantity/seller/SKU evidence and compatible declarations for each counterpart, or sufficiently fresh independently validated tracked records; then replace listing-only price certification with a strict Product-evidence gate",
+      "boundary": "No selected quantity is invented and no compatibility policy is silently changed by this acceptance report"
+    },
+    {
+      "id": "B2",
+      "classification": ["search-recall-limitation"],
+      "needed": "One actual sanitized Search response and bounded result diagnostics for the fixed target; no pagination or retries"
+    },
+    {
+      "id": "B3",
+      "classification": [
+        "unsupported-legacy-observation-contract",
+        "fixable-code-freshness-gap"
+      ],
+      "needed": "A versioned per-offer observation/expiry policy with explicit legacy handling; absent historical observation times cannot be reconstructed from offersCheckedAt"
+    }
+  ],
+  "exclusions": [
+    "SKINN null netQuantity remains tracking-only",
+    "One-word/reordered/non-ASCII scent naming and unsupported declaration formats are not certified",
+    "No new stores or category profiles",
+    "User-reported live successes are not new captured fixture evidence"
+  ],
+  "futureLiveBudget": {
+    "requiresSeparateApproval": true,
+    "maximumProviderRequests": 1,
+    "endpoint": "/amazon/search",
+    "target": "BLA BLI BLU Love Drunk 30ml",
+    "retries": 0,
+    "pagination": 0,
+    "productHydration": 0,
+    "dbWrites": 0,
+    "purpose": "Capture discovery evidence only; does not authorize an extra Product call or establish selected-SKU proof"
+  }
+}
