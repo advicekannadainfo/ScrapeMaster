@@ -78,7 +78,7 @@ describe('verified cross-store identity', () => {
   });
   it('filters persisted wrong offers without changing the cached data or source price', () => {
     const cached = [offer(wrong, 1499), offer('BLA BLI BLU Love Drunk Perfume 100ml')];
-    expect(verifiedOffers({ ...product, offers: cached })).toEqual([cached[1]]);
+    expect(verifiedOffers({ ...product, offers: cached })).toEqual([]);
     expect(cached).toHaveLength(2);
     expect(product.currentPrice).toBe(650);
     expect(verifiedOffers(product, [cached[0]])).toEqual([]);
@@ -94,12 +94,12 @@ describe('verified cross-store identity', () => {
       ]),
     ).toEqual([]);
   });
-  it('preserves the exact source listing and valid same-product offer', () => {
+  it('preserves source tracking but hides an unobserved legacy competitor', () => {
     expect(
       verifiedOffers(product, [
         { ...offer(title, 650), store: product.store, url: product.url },
         offer(title),
       ]),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 });

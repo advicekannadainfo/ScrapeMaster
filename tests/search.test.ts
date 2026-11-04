@@ -85,7 +85,7 @@ describe('searchStores', () => {
         status: 'rejected',
         candidates: 1,
         verified: 0,
-        reason: 'insufficient-identity',
+        reason: 'insufficient-product-evidence',
         sourceEvidence: 'eligible',
         sourceConfidence: 'legacy-only',
         sourceIssues: ['canonical-evidence-missing'],
@@ -112,7 +112,7 @@ describe('searchStores', () => {
           candidateLimit: 200,
           truncated: false,
         },
-        rejections: { 'insufficient-identity': 1 },
+        rejections: { 'insufficient-product-evidence': 1 },
         identityAssessment: { verified: 0, mismatch: 0, insufficient: 1 },
         identityReasons: { 'selected-evidence-missing': 1 },
       },
@@ -137,7 +137,7 @@ describe('searchStores', () => {
       currency: '₹',
       image: '',
     });
-    expect(results.map((o) => o.store)).toEqual(['myntra.com', 'flipkart']);
+    expect(results.map((o) => o.store)).toEqual(['myntra.com']);
     expect(results[0].price).toBe(650);
   });
   it('excludes AL ADHEEM when discovering Love Drunk and keeps a genuine cross-store offer', async () => {

@@ -21,6 +21,7 @@ import {
   identityFieldsAgree,
   verifiedOffers,
   isVerifiedProductMatch,
+  fragranceProductEvidenceMissing,
 } from '@/lib/verified-offers';
 import {
   enrichSearchFragranceIdentity,
@@ -141,20 +142,21 @@ export async function findOffersWithDiagnostics(
           let identityVerified = false;
           if (!sourceEligible) reason = 'insufficient-selected-identity';
           else if (isAccessory(offer.title, product.title)) reason = 'accessory-rejected';
+          else if (profile?.status === 'mismatch' || conflict)
+            reason = 'explicit-mismatch';
+          else if (fragranceProductEvidenceMissing(product, offer))
+            reason = 'insufficient-product-evidence';
           else if (profile) {
             identityVerified = isVerifiedProductMatch(product, offer);
             if (!identityVerified)
               reason =
-                profile.status === 'mismatch' || conflict
-                  ? 'explicit-mismatch'
-                  : profile.status === 'verified'
-                    ? 'render-identity-rejected'
-                    : profile.reason === 'concentration-ambiguous' ||
-                        profile.reason === 'declaration-conflict'
-                      ? 'ambiguous-concentration'
-                      : 'insufficient-identity';
-          } else if (conflict) reason = 'explicit-mismatch';
-          else {
+                profile.status === 'verified'
+                  ? 'render-identity-rejected'
+                  : profile.reason === 'concentration-ambiguous' ||
+                      profile.reason === 'declaration-conflict'
+                    ? 'ambiguous-concentration'
+                    : 'insufficient-identity';
+          } else {
             // The final verifier already requires independently complete main
             // facts for the strong-ID route, and strict attributes for legacy
             // listings. Do not apply a different title/flag gate in discovery.
@@ -196,7 +198,10 @@ export async function findOffersWithDiagnostics(
             }
           }
           if (!reason && !verifiedOffers(product, [offer]).length)
-            reason = 'render-identity-rejected';
+            reason =
+              categoryFor(product.title) === 'perfume'
+                ? 'price-observation-stale-or-missing'
+                : 'render-identity-rejected';
           if (reason) {
             rejections[reason] = (rejections[reason] ?? 0) + 1;
             const failureClass = comparisonFailureClass(reason);

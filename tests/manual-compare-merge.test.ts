@@ -1,8 +1,9 @@
+import { withFragranceProduct } from './support/fragrance-product';
 import { describe, expect, it } from 'vitest';
 import { mergeVerifiedCandidateOffers } from '@/lib/services/offers';
 import type { Offer } from '@/types';
 
-const source = {
+const source = withFragranceProduct({
   store: 'amazon',
   storeName: 'Amazon',
   title: 'BLABLIBLU Love Drunk Unisex Perfume for Men & Women 30ml',
@@ -11,20 +12,21 @@ const source = {
   variant: '30ml',
   currency: '₹',
   currentPrice: 184,
-};
-const offer = (store: string, price: number): Offer => ({
-  store,
-  storeName: store,
-  title: 'BLA BLI BLU Love Drunk Perfume 30ml',
-  brand: 'BLA BLI BLU',
-  variant: '30ml',
-  price,
-  currency: '₹',
-  url:
-    store === 'flipkart'
-      ? 'https://www.flipkart.com/p/itm111?pid=PER123'
-      : 'https://www.myntra.com/perfume/38312143/buy',
 });
+const offer = (store: string, price: number): Offer =>
+  withFragranceProduct({
+    store,
+    storeName: store,
+    title: 'BLA BLI BLU Love Drunk Perfume 30ml',
+    brand: 'BLA BLI BLU',
+    variant: '30ml',
+    price,
+    currency: '₹',
+    url:
+      store === 'flipkart'
+        ? 'https://www.flipkart.com/p/itm111?pid=PER123'
+        : 'https://www.myntra.com/perfume/38312143/buy',
+  });
 
 describe('manual verification merge', () => {
   it('preserves prior offers when a new link verification fails', () => {

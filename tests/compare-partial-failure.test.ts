@@ -1,3 +1,4 @@
+import { withFragranceProduct } from './support/fragrance-product';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Offer } from '@/types';
 
@@ -16,7 +17,7 @@ vi.mock('@/lib/scraper/stores', () => ({
 }));
 import { findOffersWithDiagnostics, findOffers } from '@/lib/scraper/compare';
 
-const source = {
+const source = withFragranceProduct({
   title: 'BLA BLI BLU Love Drunk Perfume 30 ml',
   currency: '₹',
   store: 'amazon',
@@ -26,15 +27,15 @@ const source = {
   image: '',
   brand: 'BLA BLI BLU',
   variant: '30ml',
-};
-const flipkart: Offer = {
+});
+const flipkart: Offer = withFragranceProduct({
   store: 'flipkart',
   storeName: 'Flipkart',
   title: source.title,
   url: 'https://www.flipkart.com/item/p/itmx?pid=PERHHD9GPW6NNYRQ',
   price: 250,
   currency: '₹',
-};
+});
 
 beforeEach(() => {
   mocks.discover.mockReset();
@@ -59,7 +60,7 @@ describe('automatic comparison partial failures', () => {
     );
     expect(await findOffers(source)).toHaveLength(2);
   });
-  it('automatically discovers a same-scent Myntra listing with explicit 30ml title', async () => {
+  it('does not certify a Myntra listing from an explicit 30ml title alone', async () => {
     mocks.discover.mockImplementation((adapter: { id: string }, query: string) => {
       expect(query).toBe('BLA BLI BLU love drunk 30ml');
       return Promise.resolve(
@@ -79,14 +80,9 @@ describe('automatic comparison partial failures', () => {
       );
     });
     const result = await findOffersWithDiagnostics(source);
-    expect(result.offers.map((offer) => offer.store)).toContain('myntra.com');
-    expect(result.offers.find((offer) => offer.store === 'myntra.com')?.variant).toBe(
-      '30ml',
-    );
-    expect(result.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ store: 'myntra', status: 'matched' }),
-      ]),
+    expect(result.offers.map((offer) => offer.store)).toEqual(['amazon']);
+    expect(result.diagnostics.find((d) => d.store === 'myntra')?.reason).toBe(
+      'insufficient-product-evidence',
     );
   });
   it('does not throw when every store fails; returns source listing', async () => {

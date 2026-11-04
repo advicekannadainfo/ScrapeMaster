@@ -1,3 +1,4 @@
+import { withFragranceProduct } from './support/fragrance-product';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   load: vi.fn(),
@@ -92,26 +93,26 @@ afterEach(() => {
 });
 
 describe('independent fragrance discovery evidence, offline only', () => {
-  it('enriches a compact-brand Amazon 30ml search listing and preserves it through render filtering', () => {
+  it('retains compact-brand listing metadata without promoting its price', () => {
     const p = source();
     const offer = enrichSearchFragranceIdentity(p, amazonListing());
     expect(offer).toMatchObject({ brand: 'BLA BLI BLU', variant: '30ml', price: 184 });
-    expect(verifiedOffers(p, [offer])).toHaveLength(1);
+    expect(verifiedOffers(p, [offer])).toHaveLength(0);
     expect(fragranceDiscoveryQuery(p)).toBe('BLA BLI BLU love drunk 30ml');
   });
-  it('automatically discovers and renders a sufficiently evidenced Amazon 30ml offer without Product calls', async () => {
+  it('keeps Amazon listing-only candidates unverified without Product calls', async () => {
     const p = source();
     mocks.load.mockImplementation(async (adapter: { id: string }) =>
       adapter.id === 'amazon' ? [amazonListing()] : [],
     );
     const result = await findOffersWithDiagnostics(p);
-    expect(result.offers.map((offer) => offer.store)).toEqual(['amazon', 'flipkart']);
+    expect(result.offers.map((offer) => offer.store)).toEqual(['flipkart']);
     expect(verifiedOffers(p, result.offers)).toEqual(result.offers);
     expect(result.diagnostics.find((d) => d.store === 'amazon')).toMatchObject({
-      status: 'matched',
-      reason: 'verified-competitor',
+      status: 'rejected',
+      reason: 'insufficient-product-evidence',
       candidates: 1,
-      verified: 1,
+      verified: 0,
     });
     expect(mocks.load).toHaveBeenCalledTimes(2);
     expect(mocks.load.mock.calls.every((call) => call[3].kind === 'search')).toBe(true);
@@ -120,22 +121,22 @@ describe('independent fragrance discovery evidence, offline only', () => {
     const p = source();
     const ambiguous = amazonListing(amazonFixture.title);
     expect(verifiedOffers(p, [enrichSearchFragranceIdentity(p, ambiguous)])).toHaveLength(
-      1,
+      0,
     );
     mocks.load.mockImplementation(async (adapter: { id: string }) =>
       adapter.id === 'amazon' ? [ambiguous] : [],
     );
     const result = await findOffersWithDiagnostics(p);
     expect(result.diagnostics.find((d) => d.store === 'amazon')).toMatchObject({
-      reason: 'verified-competitor',
-      verified: 1,
+      reason: 'insufficient-product-evidence',
+      verified: 0,
     });
   });
-  it('accepts repeated identical volume evidence but rejects two different quantities', () => {
+  it('keeps repeated title quantities listing-only and rejects conflicting quantities', () => {
     const p = source();
     const listing = amazonListing('BLABLIBLU Love Drunk Unisex Perfume 30ml - 30 ml');
     expect(verifiedOffers(p, [enrichSearchFragranceIdentity(p, listing)])).toHaveLength(
-      1,
+      0,
     );
     const mixed = amazonListing('BLABLIBLU Love Drunk Perfume 30 ml / 100 ml');
     expect(verifiedOffers(p, [enrichSearchFragranceIdentity(p, mixed)])).toEqual([]);
@@ -150,7 +151,7 @@ describe('independent fragrance discovery evidence, offline only', () => {
       p,
       amazonListing('BLABLIBLU Love Drunk EDP Perfume 30 ml'),
     );
-    expect(verifiedOffers(p, [good])).toHaveLength(1);
+    expect(verifiedOffers(p, [good])).toHaveLength(0);
     for (const word of ['EDT', 'Eau de Toilette', '']) {
       const bad = enrichSearchFragranceIdentity(
         p,
@@ -177,7 +178,10 @@ describe('independent fragrance discovery evidence, offline only', () => {
     const wrong = amazonListing('BLABLIBLU Love Drunk Perfume 100ml');
     mocks.load.mockImplementation(async (adapter: { id: string }) =>
       adapter.id === 'amazon'
-        ? [...Array.from({ length: 20 }, () => ({ ...wrong })), amazonListing()]
+        ? [
+            ...Array.from({ length: 20 }, () => ({ ...wrong })),
+            withFragranceProduct({ ...amazonListing(), brand: p.brand }),
+          ]
         : [],
     );
     const result = await findOffersWithDiagnostics(p);
@@ -208,8 +212,8 @@ describe('independent fragrance discovery evidence, offline only', () => {
         ? [
             amazonListing('BLABLIBLU Love Drunk Perfume 100ml'),
             amazonListing('BLABLIBLU Love Drunk Perfume'),
-            { ...amazonListing(), price: 100000 },
-            { ...amazonListing(), currency: '$' },
+            withFragranceProduct({ ...amazonListing(), brand: p.brand, price: 100000 }),
+            withFragranceProduct({ ...amazonListing(), brand: p.brand, currency: '$' }),
           ]
         : [],
     );
@@ -219,7 +223,7 @@ describe('independent fragrance discovery evidence, offline only', () => {
       reason: 'mixed-rejections',
       rejections: {
         'explicit-mismatch': 1,
-        'insufficient-identity': 1,
+        'insufficient-product-evidence': 1,
         'price-anomaly': 1,
         'currency-rejected': 1,
       },
@@ -235,7 +239,7 @@ describe('independent fragrance discovery evidence, offline only', () => {
     const result = await findOffersWithDiagnostics(p);
     const d = result.diagnostics.find((d) => d.store === 'amazon');
     expect(d).toMatchObject({
-      reason: 'render-identity-rejected',
+      reason: 'insufficient-product-evidence',
       candidates: 1,
       verified: 0,
     });
@@ -244,7 +248,7 @@ describe('independent fragrance discovery evidence, offline only', () => {
   });
   it('preserves saved Flipkart/Myntra and manual offers when Amazon returns no search candidates', async () => {
     const p = source();
-    const previous: Offer = {
+    const previous: Offer = withFragranceProduct({
       store: 'myntra.com',
       storeName: 'Myntra',
       title: 'BLA BLI BLU Love Drunk Perfume 30 ml',
@@ -253,7 +257,7 @@ describe('independent fragrance discovery evidence, offline only', () => {
       currency: '₹',
       price: 198,
       url: 'https://www.myntra.com/perfume/38312143/buy',
-    };
+    });
     const record = { ...p, offers: [previous], candidateLinksCheckedAt: new Date() };
     mocks.findById.mockImplementation(() => ({
       select: () => ({ lean: async () => record }),

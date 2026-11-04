@@ -7,6 +7,7 @@ import type { Product } from '@/types';
 import { cn } from '@/lib/utils';
 import { verifiedOffers } from '@/lib/verified-offers';
 import { EXACT_OFFERS_UNVERIFIED } from '@/lib/product-presentation';
+import { categoryFor } from '@/lib/scraper/product-identity';
 
 export default function OfferComparison({ product }: { product: Product }) {
   const offers = verifiedOffers(product);
@@ -89,7 +90,11 @@ export default function OfferComparison({ product }: { product: Product }) {
           ))}
         </ul>
       ) : (
-        <p className="mt-4 text-sm text-muted">{EXACT_OFFERS_UNVERIFIED}</p>
+        <p className="mt-4 text-sm text-muted">
+          {EXACT_OFFERS_UNVERIFIED}
+          {categoryFor(product.title) === 'perfume' &&
+            ' Offers appear after the exact product and selected size are verified, with a price checked within the last 10 minutes.'}
+        </p>
       )}
     </section>
   );

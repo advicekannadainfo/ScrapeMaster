@@ -369,7 +369,7 @@ describe('identity before price, persistence and bounded diagnostics', () => {
       adapter.id === 'amazon' ? amazonRows : myntraRows,
     );
     const result = await compare(p);
-    expect(result.offers.map((o) => o.store).sort()).toEqual(['amazon', 'flipkart']);
+    expect(result.offers.map((o) => o.store).sort()).toEqual(['flipkart']);
     expect(verifiedOffers(p, result.offers)).toEqual(result.offers);
     expect(result.diagnostics.find((d) => d.store === 'myntra.com')).toMatchObject({
       identityAssessment: { verified: 0, insufficient: 1 },

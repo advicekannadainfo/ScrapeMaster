@@ -44,6 +44,7 @@ export function comparisonFailureClass(reason: string): FailureClass {
   if (reason === 'no-search-results') return 'search-discovery-gap';
   if (reason === 'source-record-invalid') return 'saved-record-invalid';
   if (reason === 'source-price-unavailable-or-stale') return 'saved-price-unavailable';
+  if (reason === 'price-observation-stale-or-missing') return 'saved-price-unavailable';
   if (
     [
       'blocked',

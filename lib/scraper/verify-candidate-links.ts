@@ -1,8 +1,13 @@
 import { independentFragrance } from './matching/fragrance';
 import { sufficientExactEvidence } from './exact-evidence';
+import { freshProfilePrice } from './matching/observations';
+import { categoryFor } from './product-identity';
 import 'server-only';
 import type { Offer, ScrapedProduct } from '@/types';
-import { isVerifiedProductMatch } from '@/lib/verified-offers';
+import {
+  isVerifiedProductMatch,
+  fragranceProductEvidenceMissing,
+} from '@/lib/verified-offers';
 import { isPlausiblePrice } from './match';
 import { scrapeProduct } from './index';
 import { resolveStore } from './stores';
@@ -31,9 +36,10 @@ export async function verifyCandidateLinks(
   if (links.length > MAX_CANDIDATE_LINKS)
     throw new Error('Maximum two candidate links per check');
   if (
-    source.comparisonIdentityVerified === false &&
-    !sufficientExactEvidence(source.exactEvidence) &&
-    !independentFragrance(source.canonicalIdentity)
+    fragranceProductEvidenceMissing(source) ||
+    (source.comparisonIdentityVerified === false &&
+      !sufficientExactEvidence(source.exactEvidence) &&
+      !independentFragrance(source.canonicalIdentity))
   )
     return {
       offers: [],
@@ -70,6 +76,8 @@ export async function verifyCandidateLinks(
           !Number.isFinite(candidate.currentPrice) ||
           candidate.currentPrice <= 0 ||
           !isVerifiedProductMatch(source, candidate) ||
+          fragranceProductEvidenceMissing(source, candidate) ||
+          (categoryFor(source.title) === 'perfume' && !freshProfilePrice(candidate)) ||
           !isPlausiblePrice(candidate.currentPrice, source.currentPrice)
         )
           return { result: { store, status: 'rejected' } };

@@ -13,6 +13,24 @@ import { compatibleAttributes, normalizedValue } from './scraper/product-identit
 import type { Offer } from '@/types';
 import { isAccessory, comparisonPriceStatus } from './scraper/match';
 import { matchingFetchedFragrance } from './scraper/product-candidate-match';
+import { independentFragrance } from './scraper/matching/fragrance';
+import { categoryFor } from './scraper/product-identity';
+
+/** Candidate compatibility alone is not independent selected-Product proof. */
+export function fragranceProductEvidenceMissing(
+  source: MatchIdentity,
+  candidate?: MatchIdentity,
+) {
+  if (
+    categoryFor(source.title) !== 'perfume' &&
+    (!candidate || categoryFor(candidate.title) !== 'perfume')
+  )
+    return false;
+  return (
+    !independentFragrance(source.canonicalIdentity) ||
+    (candidate !== undefined && !independentFragrance(candidate.canonicalIdentity))
+  );
+}
 
 export type MatchIdentity = {
   canonicalIdentity?: unknown;
@@ -130,6 +148,8 @@ type Source = MatchIdentity & {
 /** Recheck persisted offers at render time; never mutate the database or source. */
 /** Exact title checks for search; independently fetched same-size fragrance pages may
  * additionally use explicit brand, selected variant and full scent-name evidence. */
+// Pair compatibility is not permission to display a fragrance price: callers
+// must use verifiedOffers for independent Product proof and observation freshness.
 export function isVerifiedProductMatch(source: MatchIdentity, candidate: MatchIdentity) {
   const consistent = (identity: MatchIdentity) =>
     identity.exactEvidence == null || Boolean(recordExactEvidence(identity));
@@ -246,6 +266,21 @@ export function verifiedOffers(
           offer.title === product.title &&
           offer.price === product.currentPrice
         );
+      }
+      if (fragranceProductEvidenceMissing(product, offer)) return false;
+      if (
+        categoryFor(product.title) === 'perfume' ||
+        categoryFor(offer.title) === 'perfume'
+      ) {
+        if (
+          profileOfferObservationStatus(offer) !== 'consistent' ||
+          !freshProfilePrice({
+            ...offer,
+            currentPrice: offer.price,
+            isOutOfStock: false,
+          })
+        )
+          return false;
       }
       return (
         isVerifiedProductMatch(product, offer) &&

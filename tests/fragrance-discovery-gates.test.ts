@@ -5,10 +5,7 @@ vi.mock('@/lib/scraper/discovery', () => ({
   DISCOVERY_POOL_LIMIT: 200,
 }));
 import { findOffersWithDiagnostics } from '@/lib/scraper/compare';
-import {
-  mainFragranceIdentity,
-  independentFragrance,
-} from '@/lib/scraper/matching/fragrance';
+import { mainFragranceIdentity } from '@/lib/scraper/matching/fragrance';
 import { observeProduct } from '@/lib/scraper/matching/observations';
 import {
   parseAmazonAPIProduct,
@@ -84,15 +81,13 @@ describe('fragrance release discovery gates: offline transport boundary mocked',
         : [],
     );
     const result = await findOffersWithDiagnostics(source);
-    expect(result.offers).toHaveLength(2); // preserve existing strict listing policy
+    expect(result.offers).toHaveLength(1); // listing evidence cannot certify a price
     expect(result.diagnostics.find((d) => d.store === 'amazon')).toMatchObject({
       candidateEvidence: { listingOnly: 1, independentProduct: 0 },
     });
-    expect(
-      independentFragrance(
-        result.offers.find((o) => o.store === 'amazon')!.canonicalIdentity,
-      ),
-    ).toBe(false);
+    expect(result.diagnostics.find((d) => d.store === 'amazon')?.reason).toBe(
+      'insufficient-product-evidence',
+    );
     expect(mocks.discover).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(result.diagnostics)).not.toMatch(
       /Quiet Garden|https|offline-only|B0TEST/,

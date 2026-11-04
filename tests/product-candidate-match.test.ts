@@ -40,7 +40,7 @@ describe('independently fetched, explicitly sized fragrance identity', () => {
   it('matches Amazon 30ml against same-model Flipkart 30ml and Myntra 30ml', () => {
     expect(isVerifiedProductMatch(amazon, flipkart)).toBe(true);
     expect(isVerifiedProductMatch(amazon, myntra)).toBe(true);
-    expect(verifiedOffers(amazon, [flipkart, myntra])).toHaveLength(2);
+    expect(verifiedOffers(amazon, [flipkart, myntra])).toHaveLength(0); // legacy links have no Product evidence
   });
   it('rejects different size, fragrance, brands and unknown variants', () => {
     expect(matchingFetchedFragrance(amazon, { ...flipkart, variant: '100ml' })).toBe(

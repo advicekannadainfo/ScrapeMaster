@@ -18,6 +18,13 @@ import {
 
 export const OFFERS_TTL_MS = 24 * 60 * 60 * 1000;
 
+/** Retain evidence without renewing timestamps; rendering checks it separately. */
+export function retainOfferEvidence(previous: Offer[], visible: Offer[]) {
+  return [
+    ...new Map([...previous, ...visible].map((offer) => [offer.store, offer])).values(),
+  ];
+}
+
 /** Existing automatic discovery route stays unchanged. */
 export async function updateOffers(id: string) {
   const product = await ProductModel.findById(id)
@@ -106,7 +113,7 @@ export async function updateOffers(id: string) {
     { _id: id },
     {
       $set: {
-        offers,
+        offers: retainOfferEvidence(source.offers, offers),
         offersCheckedAt: new Date(),
         ...(links ? { productLinks: validAssociations(source, links) } : {}),
       },
@@ -207,7 +214,23 @@ export async function verifyAndUpdateCandidateOffers(
     checked.offers,
   );
   // Manual verification does NOT reset the automatic search's 10-minute cooldown.
-  await ProductModel.updateOne({ _id: id }, { $set: { offers } });
+  await ProductModel.updateOne(
+    { _id: id },
+    {
+      $set: {
+        offers: retainOfferEvidence(
+          latest.offers.map((o) => ({
+            ...o,
+            brand: o.brand ?? undefined,
+            variant: o.variant ?? undefined,
+            image: o.image ?? undefined,
+            savedTrackedProduct: o.savedTrackedProduct ?? undefined,
+          })),
+          offers,
+        ),
+      },
+    },
+  );
   return { offers, verified: checked.offers.length, diagnostics: checked.diagnostics };
 }
 

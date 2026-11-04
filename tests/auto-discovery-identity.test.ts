@@ -35,11 +35,11 @@ describe('safe automatic fragrance discovery (offline)', () => {
   it('searches distinctive brand, scent and selected size without long marketing keywords', () => {
     expect(fragranceDiscoveryQuery(amazon)).toBe('BLA BLI BLU love drunk 30ml');
   });
-  it('uses title-based selected quantity when catalog search omits variant metadata', () => {
+  it('keeps title volume as listing metadata without Product verification', () => {
     const candidate = normalized(myntraSearch);
     expect(candidate.variant).toBe('30ml');
     expect(isVerifiedProductMatch(amazon, candidate)).toBe(true);
-    expect(verifiedOffers(amazon, [candidate])).toEqual([candidate]);
+    expect(verifiedOffers(amazon, [candidate])).toEqual([]);
   });
   it('normalizes a Flipkart search listing with no explicit brand field', () => {
     const candidate = normalized({
@@ -51,7 +51,7 @@ describe('safe automatic fragrance discovery (offline)', () => {
       url: 'https://www.flipkart.com/love-drunk/p/itm25b0414fd539e?pid=PERHHD9GPW6NNYRQ',
     });
     expect(candidate).toMatchObject({ brand: 'BLA BLI BLU', variant: '30ml' });
-    expect(verifiedOffers(amazon, [candidate])).toHaveLength(1);
+    expect(verifiedOffers(amazon, [candidate])).toHaveLength(0);
   });
   it.each([
     'BLA BLI BLU Love Drunk Perfume 100ml',
