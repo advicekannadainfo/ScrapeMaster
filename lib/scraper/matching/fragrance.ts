@@ -198,6 +198,35 @@ export function readCanonicalIdentity(
         return reject('product-fact-scope-invalid', `${path}.scope`);
     }
   }
+  const descriptorValues = {
+    concentration: ['edp', 'edt', 'edc', 'extrait'],
+    formulation: ['perfume-oil', 'body-mist', 'body-spray', 'deodorant', 'attar'],
+    edition: ['intense', 'elixir', 'pour-homme', 'pour-femme', 'for-him', 'for-her'],
+  } as const;
+  for (const slot of ['concentration', 'formulation', 'edition'] as const) {
+    const f = e.selected[slot];
+    if (!f) continue;
+    const fieldAllowed =
+      e.source.kind === 'search'
+        ? f.field === 'listing.title'
+        : f.field === 'main.title' ||
+          (slot !== 'edition' &&
+            e.source.store === 'amazon' &&
+            f.field === 'product_information.Fragrance Concentration');
+    if (!fieldAllowed)
+      return reject('descriptor-field-invalid', `selected.${slot}.field`);
+    if (f.scope !== (e.source.kind === 'search' ? 'listing' : 'main'))
+      return reject('descriptor-scope-invalid', `selected.${slot}.scope`);
+    const values = slot === 'edition' ? f.value.split('/') : [f.value];
+    if (
+      values.some((v) => !(descriptorValues[slot] as readonly string[]).includes(v)) ||
+      [...new Set(values)].sort().join('/') !== f.value
+    )
+      return reject(`${slot}-value-invalid`, `selected.${slot}.value`);
+  }
+  const declarationValues = new Set<string>(Object.values(descriptorValues).flat());
+  if (e.negated.some((v) => !declarationValues.has(v)))
+    return reject('negated-value-invalid', 'negated');
   if (e.source.kind === 'product') {
     const brandField =
       e.source.store === 'amazon' ? 'product_information.Brand' : 'product_results.brand';
@@ -211,6 +240,8 @@ export function readCanonicalIdentity(
     if (e.brand.field !== brandField) return reject('brand-field-invalid', 'brand.field');
     if (e.line && e.line.field !== 'main.title')
       return reject('line-field-invalid', 'line.field');
+    if (e.line && e.line.scope !== 'main')
+      return reject('line-scope-invalid', 'line.scope');
     if (e.selected.volume) {
       if (e.selected.volume.scope !== 'selected')
         return reject('volume-scope-invalid', 'selected.volume.scope');
@@ -488,6 +519,7 @@ export const fragranceProfile: CategoryProfile<FragranceFacts> = {
     if (a.brand.value !== b.brand.value) return result('mismatch', 'brand-conflict');
     if (a.line && b.line && a.line.value !== b.line.value)
       return result('mismatch', 'scent-conflict');
+    let unconfirmed: string | undefined;
     for (const key of [
       'volume',
       'pack',
@@ -499,7 +531,7 @@ export const fragranceProfile: CategoryProfile<FragranceFacts> = {
         y = b.selected[key]?.value;
       if (x && y && x !== y) return result('mismatch', `${key}-conflict`);
       if (key !== 'volume' && Boolean(x) !== Boolean(y))
-        return result('insufficient', `${key}-unconfirmed`);
+        unconfirmed ??= `${key}-unconfirmed`;
     }
     if (
       a.negated.some((v) =>
@@ -518,6 +550,7 @@ export const fragranceProfile: CategoryProfile<FragranceFacts> = {
       )
     )
       return result('mismatch', 'negated-declaration');
+    if (unconfirmed) return result('insufficient', unconfirmed);
     if (
       (a.negated.length || b.negated.length) &&
       !a.selected.concentration &&

@@ -30,7 +30,14 @@ export function comparisonFailureClass(reason: string): FailureClass {
   if (reason === 'verified-competitor') return 'verified';
   if (['explicit-mismatch', 'accessory-rejected', 'currency-rejected'].includes(reason))
     return 'wrong-product';
-  if (['price-anomaly', 'price-rejected', 'invalid-price'].includes(reason))
+  if (
+    [
+      'price-anomaly',
+      'price-rejected',
+      'invalid-price',
+      'price-observation-invalid',
+    ].includes(reason)
+  )
     return 'price-anomaly';
   if (reason === 'parse') return 'parser-gap';
   if (reason === 'stock-unavailable') return 'stock-unavailable';

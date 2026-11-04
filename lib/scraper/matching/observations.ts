@@ -36,6 +36,7 @@ export function observeProduct(
   currency: string,
   isOutOfStock: boolean,
 ) {
+  if (typeof isOutOfStock !== 'boolean') return null;
   const e = readCanonicalIdentity(identity);
   if (!e || e.source.kind !== 'product') return null;
   const result = observation.safeParse({
@@ -49,6 +50,36 @@ export function observeProduct(
     inStock: !isOutOfStock,
   });
   return result.success ? result.data : null;
+}
+/** Check an existing Product observation before any offer display, even when it
+ * is not tagged savedTrackedProduct. Absence stays unrecorded (legacy policy),
+ * never proof of stock, price freshness or independently selected identity. */
+export function profileOfferObservationStatus(record: {
+  canonicalIdentity?: unknown;
+  priceObservation?: unknown;
+  store: string;
+  url: string;
+  price: number;
+  currency: string;
+}) {
+  const e = readCanonicalIdentity(record.canonicalIdentity);
+  if (e?.source.kind !== 'product' || record.priceObservation == null)
+    return 'unrecorded' as const;
+  const parsed = observation.safeParse(record.priceObservation);
+  if (!parsed.success) return 'invalid' as const;
+  const p = parsed.data;
+  if (
+    p.url !== record.url ||
+    e.source.url !== record.url ||
+    p.store !== record.store ||
+    e.source.store !== record.store ||
+    p.identityKey !== identityKey(e) ||
+    p.price !== record.price ||
+    p.currency !== record.currency ||
+    Date.parse(p.observedAt) > Date.now()
+  )
+    return 'invalid' as const;
+  return p.inStock ? ('consistent' as const) : ('out-of-stock' as const);
 }
 export function freshProfilePrice(
   record: {

@@ -1,5 +1,10 @@
-import { readCanonicalIdentity } from './matching/fragrance';
+import {
+  readCanonicalIdentity,
+  fragranceIdentity,
+  independentFragrance,
+} from './matching/fragrance';
 import { categoryDecision } from './matching';
+import { profileOfferObservationStatus } from './matching/observations';
 import { exactMatch, readExactEvidence } from './exact-evidence';
 import {
   comparisonEvidenceState,
@@ -72,6 +77,13 @@ export async function findOffersWithDiagnostics(
     identityReasons?: Record<string, number>;
     failureClasses?: Partial<Record<FailureClass, number>>;
     sourceRecord?: ReturnType<typeof comparisonEvidenceState>;
+    candidateEvidence?: {
+      independentProduct: number;
+      partialProduct: number;
+      listingOnly: number;
+      legacy: number;
+      invalid: number;
+    };
   }[] = [];
 
   const results = await Promise.allSettled(
@@ -90,6 +102,13 @@ export async function findOffersWithDiagnostics(
       const rejections: Record<string, number> = {};
       const identityAssessment = { verified: 0, mismatch: 0, insufficient: 0 };
       const identityReasons: Record<string, number> = {};
+      const candidateEvidence = {
+        independentProduct: 0,
+        partialProduct: 0,
+        listingOnly: 0,
+        legacy: 0,
+        invalid: 0,
+      };
       const failureClasses: Partial<Record<FailureClass, number>> = {};
       const sourceCanonical = readCanonicalIdentity(product.canonicalIdentity);
       const sourceRecord = comparisonEvidenceState(product);
@@ -103,6 +122,14 @@ export async function findOffersWithDiagnostics(
       const ranked = offers
         .flatMap((original) => {
           const offer = enrichSearchFragranceIdentity(product, original);
+          if (categoryFor(product.title) === 'perfume') {
+            const e = readCanonicalIdentity(offer.canonicalIdentity);
+            if (offer.canonicalIdentity == null) candidateEvidence.legacy++;
+            else if (!e || !fragranceIdentity(offer)) candidateEvidence.invalid++;
+            else if (e.source.kind === 'search') candidateEvidence.listingOnly++;
+            else if (independentFragrance(e)) candidateEvidence.independentProduct++;
+            else candidateEvidence.partialProduct++;
+          }
           const profile = categoryDecision(product, offer);
           const a = titleAttributes(`${product.title} ${product.variant ?? ''}`),
             b = titleAttributes(`${offer.title} ${offer.variant ?? ''}`);
@@ -149,9 +176,14 @@ export async function findOffersWithDiagnostics(
           // A price anomaly is reported only after identity is verified. It never
           // certifies a candidate and never triggers paid confirmation automatically.
           if (!reason) {
+            const observation = profileOfferObservationStatus(offer);
             if (!identityVerified) reason = 'render-identity-rejected';
-            else if (readExactEvidence(offer.exactEvidence)?.inStock === false)
+            else if (
+              readExactEvidence(offer.exactEvidence)?.inStock === false ||
+              observation === 'out-of-stock'
+            )
               reason = 'stock-unavailable';
+            else if (observation === 'invalid') reason = 'price-observation-invalid';
             else if (offer.currency !== product.currency) reason = 'currency-rejected';
             else {
               const price = comparisonPriceStatus(offer.price, product.currentPrice);
@@ -191,6 +223,7 @@ export async function findOffersWithDiagnostics(
               : 'mixed-rejections',
         sourceEvidence,
         sourceRecord,
+        ...(categoryFor(product.title) === 'perfume' ? { candidateEvidence } : {}),
         failureClasses: !offers.length
           ? { 'search-discovery-gap': 1 }
           : { ...failureClasses, ...(ranked.length ? { verified: ranked.length } : {}) },
@@ -310,6 +343,7 @@ export async function findOffers(
         sourceVolumeEvidence: diagnostic.sourceVolumeEvidence,
         identityAssessment: diagnostic.identityAssessment,
         identityReasons: diagnostic.identityReasons,
+        candidateEvidence: diagnostic.candidateEvidence,
         failureClasses: diagnostic.failureClasses,
         sourceRecord: diagnostic.sourceRecord,
         profile: diagnostic.profile,

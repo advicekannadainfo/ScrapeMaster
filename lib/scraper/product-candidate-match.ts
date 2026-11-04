@@ -31,6 +31,9 @@ export function enrichSearchFragranceIdentity<T extends ProductCandidateIdentity
   source: ProductCandidateIdentity,
   candidate: T,
 ): T {
+  // Enrich only a previously unannotated listing. Never downgrade Product or
+  // persisted evidence (including invalid/partial evidence) into title claims.
+  if (candidate.canonicalIdentity != null) return candidate;
   if (
     !source.brand ||
     !source.variant ||

@@ -1,5 +1,8 @@
 import { categoryDecision } from './scraper/matching';
-import { freshProfilePrice } from './scraper/matching/observations';
+import {
+  freshProfilePrice,
+  profileOfferObservationStatus,
+} from './scraper/matching/observations';
 import {
   exactMatch,
   freshSavedPrice,
@@ -201,6 +204,11 @@ export function verifiedOffers(
       if (
         offer.store !== product.store &&
         readExactEvidence(offer.exactEvidence)?.inStock === false
+      )
+        return false;
+      if (
+        offer.store !== product.store &&
+        ['invalid', 'out-of-stock'].includes(profileOfferObservationStatus(offer))
       )
         return false;
       try {
