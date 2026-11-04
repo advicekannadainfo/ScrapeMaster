@@ -74,79 +74,153 @@ const allowedFields: Record<string, string[]> = {
   flipkart: ['product_results.brand', ...selectedVolumeFields.flipkart, 'main.title'],
   'myntra.com': ['product_results.brand', 'selectedSeller.netQuantity', 'main.title'],
 };
-export function readCanonicalIdentity(value: unknown): CanonicalIdentity | undefined {
+export type CanonicalValidationFailure = { code: string; path: string };
+const diagnosticPaths = new Set([
+  '$',
+  'version',
+  'profile',
+  'category',
+  'source',
+  'source.store',
+  'source.url',
+  'source.kind',
+  'source.binding',
+  'brand',
+  'line',
+  'selected',
+  'negated',
+  'negated.[]',
+  'issues',
+  'issues.[]',
+  ...[
+    'brand',
+    'line',
+    ...['volume', 'pack', 'concentration', 'formulation', 'edition'].map(
+      (key) => `selected.${key}`,
+    ),
+  ].flatMap((path) => [
+    path,
+    ...['value', 'field', 'scope'].map((key) => `${path}.${key}`),
+  ]),
+]);
+export function canonicalValidationFailures(
+  value: unknown,
+): CanonicalValidationFailure[] {
+  const failures: CanonicalValidationFailure[] = [];
+  readCanonicalIdentity(value, (failure) => {
+    if (failures.length < 8) failures.push(failure);
+  });
+  return failures;
+}
+export function readCanonicalIdentity(
+  value: unknown,
+  onFailure?: (failure: CanonicalValidationFailure) => void,
+): CanonicalIdentity | undefined {
+  const reject = (code: string, path: string) => {
+    onFailure?.({ code, path });
+    return undefined;
+  };
   const parsed = identitySchema.safeParse(value);
-  if (!parsed.success) return;
-  const e = parsed.data;
-  if (
-    !boundSource(e.source) ||
-    brandKey(e.brand.value) !== e.brand.value ||
-    e.brand.value.length < 3
-  )
+  if (!parsed.success) {
+    const allowedCodes = new Set([
+      'invalid_type',
+      'invalid_literal',
+      'invalid_enum_value',
+      'invalid_string',
+      'too_small',
+      'too_big',
+      'custom',
+    ]);
+    for (const issue of parsed.error.issues.slice(0, 8)) {
+      const path =
+        issue.path.map((p) => (typeof p === 'number' ? '[]' : p)).join('.') || '$';
+      onFailure?.({
+        code: `schema.${allowedCodes.has(issue.code) ? issue.code : 'invalid'}`,
+        path: diagnosticPaths.has(path) ? path : '$',
+      });
+    }
     return;
+  }
+  const e = parsed.data;
+  if (!boundSource(e.source)) return reject('source-url-unbound', 'source.url');
+  if (brandKey(e.brand.value) !== e.brand.value)
+    return reject('brand-key-not-canonical', 'brand.value');
+  if (e.brand.value.length < 3) return reject('brand-key-too-short', 'brand.value');
   const expected =
     e.source.store === 'amazon'
       ? 'asin'
       : e.source.store === 'flipkart'
         ? 'url-provider'
         : 'seller-sku';
-  if (e.source.kind === 'product' && e.source.binding !== expected) return;
-  if (e.source.kind === 'search' && e.source.binding !== 'listing') return;
-  const facts = [e.brand, e.line, ...Object.values(e.selected)].filter(
-    (f): f is IdentityFact => Boolean(f),
-  );
-  if (
-    facts.some((f) =>
-      e.source.kind === 'search'
-        ? f.scope !== 'listing' || f.field !== 'listing.title'
-        : !allowedFields[e.source.store].includes(f.field) ||
-          !['main', 'selected'].includes(f.scope),
-    )
-  )
-    return;
+  if (e.source.kind === 'product' && e.source.binding !== expected)
+    return reject('product-binding-invalid', 'source.binding');
+  if (e.source.kind === 'search' && e.source.binding !== 'listing')
+    return reject('listing-binding-invalid', 'source.binding');
+  const facts: [string, IdentityFact | undefined][] = [
+    ['brand', e.brand],
+    ['line', e.line],
+    ...Object.entries(e.selected).map(
+      ([key, f]) => [`selected.${key}`, f] as [string, IdentityFact | undefined],
+    ),
+  ];
+  for (const [path, f] of facts) {
+    if (!f) continue;
+    if (e.source.kind === 'search') {
+      if (f.scope !== 'listing')
+        return reject('listing-fact-scope-invalid', `${path}.scope`);
+      if (f.field !== 'listing.title')
+        return reject('listing-fact-field-invalid', `${path}.field`);
+    } else {
+      if (!allowedFields[e.source.store].includes(f.field))
+        return reject('product-fact-field-disallowed', `${path}.field`);
+      if (!['main', 'selected'].includes(f.scope))
+        return reject('product-fact-scope-invalid', `${path}.scope`);
+    }
+  }
   if (e.source.kind === 'product') {
     const brandField =
       e.source.store === 'amazon' ? 'product_information.Brand' : 'product_results.brand';
-    const volumeField =
+    const volumeFields =
       e.source.store === 'amazon'
-        ? 'product_information.Item Volume'
+        ? ['product_information.Item Volume', 'product_information.Package Size Name']
         : e.source.store === 'flipkart'
-          ? 'specifications.General.Quantity'
-          : 'selectedSeller.netQuantity';
-    if (
-      e.brand.scope !== 'main' ||
-      e.brand.field !== brandField ||
-      (e.line && e.line.field !== 'main.title') ||
-      (e.selected.volume &&
-        (e.selected.volume.scope !== 'selected' ||
-          !(
-            e.source.store === 'amazon'
-              ? [volumeField, 'product_information.Package Size Name']
-              : e.source.store === 'flipkart'
-                ? [...selectedVolumeFields.flipkart]
-                : [volumeField]
-          ).includes(e.selected.volume.field)))
-    )
-      return;
+          ? [...selectedVolumeFields.flipkart]
+          : ['selectedSeller.netQuantity'];
+    if (e.brand.scope !== 'main') return reject('brand-scope-invalid', 'brand.scope');
+    if (e.brand.field !== brandField) return reject('brand-field-invalid', 'brand.field');
+    if (e.line && e.line.field !== 'main.title')
+      return reject('line-field-invalid', 'line.field');
+    if (e.selected.volume) {
+      if (e.selected.volume.scope !== 'selected')
+        return reject('volume-scope-invalid', 'selected.volume.scope');
+      if (!volumeFields.includes(e.selected.volume.field))
+        return reject('volume-field-invalid', 'selected.volume.field');
+    }
   }
   if (
     e.selected.volume &&
     (!/^\d+(?:\.\d+)?ml$/.test(e.selected.volume.value) ||
       !volumeMl(e.selected.volume.value))
   )
-    return;
-  if (
-    e.selected.pack &&
-    (e.source.store !== 'amazon' ||
-      e.selected.pack.field !== 'product_information.Number of Items' ||
-      e.selected.pack.scope !== 'selected' ||
-      !Number.isSafeInteger(Number(e.selected.pack.value)) ||
-      Number(e.selected.pack.value) <= 0 ||
-      Number(e.selected.pack.value) > 1000)
-  )
-    return;
+    return reject('volume-value-invalid', 'selected.volume.value');
+  if (e.selected.pack) {
+    const pack = e.selected.pack;
+    if (e.source.store !== 'amazon')
+      return reject('pack-store-unsupported', 'source.store');
+    if (pack.field !== 'product_information.Number of Items')
+      return reject('pack-field-invalid', 'selected.pack.field');
+    if (pack.scope !== 'selected')
+      return reject('pack-scope-invalid', 'selected.pack.scope');
+    if (
+      !Number.isSafeInteger(Number(pack.value)) ||
+      Number(pack.value) <= 0 ||
+      Number(pack.value) > 1000
+    )
+      return reject('pack-value-invalid', 'selected.pack.value');
+  }
   return e;
 }
+
 function derive(
   title: string,
   brand: string,

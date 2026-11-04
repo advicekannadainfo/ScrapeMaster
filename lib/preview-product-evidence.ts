@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import {
   readCanonicalIdentity,
+  canonicalValidationFailures,
   independentFragrance,
 } from '@/lib/scraper/matching/fragrance';
 import { freshProfilePrice } from '@/lib/scraper/matching/observations';
@@ -48,6 +49,8 @@ export function productEvidenceSummary(record: Record<string, unknown> | null) {
             : parsed
               ? 'valid'
               : 'invalid',
+      validationFailures: canonicalValidationFailures(value),
+      issuesValidated: Boolean(parsed),
       independentlyValidated: independentFragrance(value),
       issues: parsed?.issues ?? [],
       selectedVolumePresent: Boolean(parsed?.selected.volume),
