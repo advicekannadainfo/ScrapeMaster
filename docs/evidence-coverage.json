@@ -1,0 +1,320 @@
+{
+  "version": 1,
+  "baseline": "ce37989cc47edfa22bcf1c659bd9c42b3592405a",
+  "method": "Offline parser execution of existing unmodified fixtures; no live or category-wide success inferred",
+  "summary": {
+    "categoryStoreCells": 18,
+    "capturedProductFixtures": 3,
+    "capturedCategoryStoreCells": 3,
+    "releaseReadyCategories": 0
+  },
+  "fixtures": [
+    {
+      "store": "amazon",
+      "category": "fragrance",
+      "provenance": "captured",
+      "file": "amazon-india-product-full.json",
+      "tracking": "pass",
+      "selectedFields": [
+        "product_information.Fragrance Concentration",
+        "product_information.Item Volume",
+        "product_information.Number of Items"
+      ],
+      "independentIdentity": true,
+      "sourcePriceValid": true,
+      "stockExplicit": true
+    },
+    {
+      "store": "flipkart",
+      "category": "fragrance",
+      "provenance": "captured",
+      "file": "flipkart-product-real.json",
+      "tracking": "pass",
+      "selectedFields": ["specifications.General.Quantity"],
+      "independentIdentity": true,
+      "sourcePriceValid": true,
+      "stockExplicit": true
+    },
+    {
+      "store": "myntra.com",
+      "category": "fragrance",
+      "provenance": "captured",
+      "file": "myntra-product-real.json",
+      "tracking": "pass",
+      "selectedFields": ["selectedSeller.netQuantity"],
+      "independentIdentity": true,
+      "sourcePriceValid": true,
+      "stockExplicit": true
+    },
+    {
+      "store": "flipkart",
+      "category": "electronics",
+      "provenance": "documented",
+      "file": "flipkart-product-full.json",
+      "tracking": "blocked-contract",
+      "selectedFields": [],
+      "independentIdentity": false,
+      "sourcePriceValid": false,
+      "stockExplicit": false
+    },
+    {
+      "store": "myntra.com",
+      "category": "fashion",
+      "provenance": "documented",
+      "file": "myntra-product.json",
+      "tracking": "pass",
+      "selectedFields": [],
+      "independentIdentity": false,
+      "sourcePriceValid": true,
+      "stockExplicit": true
+    }
+  ],
+  "searches": [
+    {
+      "store": "amazon",
+      "file": "amazon-search.json",
+      "provenance": "documented-synthetic",
+      "rows": 1,
+      "categories": ["fragrance"],
+      "establishesSelectedSku": false
+    },
+    {
+      "store": "flipkart",
+      "file": "flipkart-search.json",
+      "provenance": "documented-synthetic",
+      "rows": 1,
+      "categories": ["fragrance"],
+      "establishesSelectedSku": false
+    },
+    {
+      "store": "myntra.com",
+      "file": "myntra-search.json",
+      "provenance": "documented-synthetic",
+      "rows": 1,
+      "categories": ["fashion"],
+      "establishesSelectedSku": false
+    }
+  ],
+  "rows": [
+    {
+      "category": "fragrance",
+      "store": "amazon",
+      "capturedProductFixtures": 1,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "captured-pass",
+      "observedSelectedFields": [
+        "product_information.Fragrance Concentration",
+        "product_information.Item Volume",
+        "product_information.Number of Items"
+      ],
+      "discoveryEvidence": "documented-synthetic-listing",
+      "canonicalProfile": "fragrance-v1",
+      "exactReleaseStatus": "conditional-evidence-required",
+      "priceDisplayEvidence": "captured-source-only"
+    },
+    {
+      "category": "fragrance",
+      "store": "flipkart",
+      "capturedProductFixtures": 1,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "captured-pass",
+      "observedSelectedFields": ["specifications.General.Quantity"],
+      "discoveryEvidence": "documented-synthetic-listing",
+      "canonicalProfile": "fragrance-v1",
+      "exactReleaseStatus": "conditional-evidence-required",
+      "priceDisplayEvidence": "captured-source-only"
+    },
+    {
+      "category": "fragrance",
+      "store": "myntra.com",
+      "capturedProductFixtures": 1,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "captured-pass",
+      "observedSelectedFields": ["selectedSeller.netQuantity"],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "fragrance-v1",
+      "exactReleaseStatus": "conditional-evidence-required",
+      "priceDisplayEvidence": "captured-source-only"
+    },
+    {
+      "category": "electronics",
+      "store": "amazon",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "electronics",
+      "store": "flipkart",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 1,
+      "trackingEvidence": "documented-contract-blocked",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "electronics",
+      "store": "myntra.com",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "fashion",
+      "store": "amazon",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "fashion",
+      "store": "flipkart",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "fashion",
+      "store": "myntra.com",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 1,
+      "trackingEvidence": "documented-only",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "documented-synthetic-listing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "documented-source-only"
+    },
+    {
+      "category": "grocery",
+      "store": "amazon",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "grocery",
+      "store": "flipkart",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "grocery",
+      "store": "myntra.com",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "appliances",
+      "store": "amazon",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "appliances",
+      "store": "flipkart",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "appliances",
+      "store": "myntra.com",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "books",
+      "store": "amazon",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "books",
+      "store": "flipkart",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    },
+    {
+      "category": "books",
+      "store": "myntra.com",
+      "capturedProductFixtures": 0,
+      "documentedProductFixtures": 0,
+      "trackingEvidence": "no-category-product-fixture",
+      "observedSelectedFields": [],
+      "discoveryEvidence": "category-search-fixture-missing",
+      "canonicalProfile": "not-enabled",
+      "exactReleaseStatus": "unsupported-for-category-wide-release",
+      "priceDisplayEvidence": "not-established"
+    }
+  ]
+}
