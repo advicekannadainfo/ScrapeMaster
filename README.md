@@ -94,6 +94,19 @@ npm run dev                  # http://localhost:3000
 
 Search for a product on the home page to start tracking. Run `npm run feeds:refresh` to fill deals, trending, sale banners and store health.
 
+Automatic fragrance Product verification is **disabled by default**. Leave
+`MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION` unset or `false`; only the exact value
+`true` enables it server-side. When explicitly enabled, one comparison may use up
+to two existing Search requests plus **one dedicated Product request per competitor
+store, two Product requests total**. Only the highest-ranked eligible candidate
+per store is attempted; failures never try another URL, retry, paginate or fall
+back. Verification coalesces in memory and caches successful results for at most
+ten minutes (failures for one minute), rechecking observation freshness on reuse.
+An independently selected source variant is required before any Product request.
+The existing ten-minute Compare cooldown, manual-link budget, and B1/B3 price
+gates remain in force. API request counts are limits, not provider credit counts.
+No environment setting is enabled by adding this code.
+
 For rendered product pages through ScrapingDog, set `SCRAPINGDOG_API_KEY`
 in `.env.local`, Vercel environment variables, and the GitHub Actions repository
 secret of the same name. With this key set, Flipkart product pages use the

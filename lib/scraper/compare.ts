@@ -4,6 +4,7 @@ import {
   independentFragrance,
 } from './matching/fragrance';
 import { categoryDecision } from './matching';
+import { createFragranceHydrator, type HydrationDiagnostic } from './hydrate-fragrance';
 import { profileOfferObservationStatus } from './matching/observations';
 import { exactMatch, readExactEvidence } from './exact-evidence';
 import {
@@ -58,12 +59,14 @@ export async function findOffersWithDiagnostics(
   const region = regionFromCurrency(product.currency);
   const query = fragranceDiscoveryQuery(product) ?? comparisonSearchQuery(product.title);
   const stores = searchableStores(region).filter((store) => store.id !== product.store);
+  const hydrator = createFragranceHydrator(product);
   const diagnostics: {
     store: string;
     status: 'no-results' | 'rejected' | 'matched' | 'failed';
     candidates: number;
     verified: number;
     reason?: string;
+    hydration?: HydrationDiagnostic;
     sourceEvidence?:
       'eligible' | 'selected-volume-unconfirmed' | 'selected-identity-unconfirmed';
     discovery?: DiscoveryObservation;
@@ -218,7 +221,25 @@ export async function findOffersWithDiagnostics(
           ];
         })
         .sort((x, y) => y.score - x.score || x.offer.price - y.offer.price);
+      let hydration: HydrationDiagnostic | undefined;
+      if (hydrator.enabled && categoryFor(product.title) === 'perfume') {
+        if (ranked.length)
+          hydration = {
+            status: 'already-verified',
+            searchCandidates: offers.length,
+            eligibleCandidates: 0,
+            productRequests: 0,
+            cacheHit: false,
+          };
+        else {
+          const result = await hydrator.verify(adapter.id, offers);
+          hydration = result.diagnostic;
+          if (result.offer)
+            ranked.push({ offer: result.offer, score: 1, confidence: 'category-exact' });
+        }
+      }
       diagnostics.push({
+        ...(hydration ? { hydration } : {}),
         reason: !offers.length
           ? 'no-search-results'
           : ranked.length
@@ -349,6 +370,7 @@ export async function findOffers(
         identityAssessment: diagnostic.identityAssessment,
         identityReasons: diagnostic.identityReasons,
         candidateEvidence: diagnostic.candidateEvidence,
+        hydration: diagnostic.hydration,
         failureClasses: diagnostic.failureClasses,
         sourceRecord: diagnostic.sourceRecord,
         profile: diagnostic.profile,
