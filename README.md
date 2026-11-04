@@ -107,6 +107,20 @@ The existing ten-minute Compare cooldown, manual-link budget, and B1/B3 price
 gates remain in force. API request counts are limits, not provider credit counts.
 No environment setting is enabled by adding this code.
 
+`POST /api/preview/fragrance-dry-run` is an isolated diagnostic, never called by
+the normal UI. It requires `VERCEL_ENV=preview` and Bearer `CRON_SECRET`, and
+rejects a globally enabled hydration flag. Its strict JSON body accepts only
+`{"url":"<the approved Old Money 30ml Flipkart URL>"}`. One native MongoDB
+projected read is closed before provider work; no write services or model index
+initialization are used. A source fetch, if necessary, is ephemeral. Dedicated
+HTTP transports enforce five one-use slots per invocation: Flipkart Product,
+Amazon Search/Product, Myntra Search/Product. Generic fallback is denied; no
+retry, pagination, second candidate, cache promotion or DB write occurs. The
+five-request cap counts ScrapingDog requests, not its variable credit charges.
+Existing DNS/robots restrictions still apply. Responses contain only bounded
+statuses/counts and proof/freshness outcomes, never raw products or subscribers.
+Do not invoke this endpoint without separate approval for the paid dry run.
+
 For rendered product pages through ScrapingDog, set `SCRAPINGDOG_API_KEY`
 in `.env.local`, Vercel environment variables, and the GitHub Actions repository
 secret of the same name. With this key set, Flipkart product pages use the

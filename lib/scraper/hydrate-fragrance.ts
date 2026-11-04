@@ -14,6 +14,7 @@ import { categoryFor, titleAttributes } from './product-identity';
 import { isAccessory, titleSimilarity } from './match';
 import { resolveStore } from './stores';
 import { verifyCandidateLinks } from './verify-candidate-links';
+import { previewBudgetActive } from './preview-provider-budget';
 
 export const HYDRATION_FLAG = 'MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION';
 export const MAX_HYDRATION_REQUESTS = 2;
@@ -41,8 +42,15 @@ const cache = new Map<string, { until: number; pending: Promise<Verification> }>
 /** One shared reservation context per comparison. Flag must be exactly "true".
  * The returned function can try at most one URL/store; a failed URL is final.
  * No retries, pagination, fallback, refresh, notifications or database access. */
-export function createFragranceHydrator(source: Source) {
-  const enabled = process.env[HYDRATION_FLAG] === 'true';
+export function createFragranceHydrator(
+  source: Source,
+  options?: { previewDryRun: true },
+) {
+  const dryRun =
+    options?.previewDryRun === true &&
+    process.env.VERCEL_ENV === 'preview' &&
+    previewBudgetActive();
+  const enabled = process.env[HYDRATION_FLAG] === 'true' || dryRun;
   const storesUsed = new Set<string>();
   let requests = 0;
   return {
@@ -148,7 +156,7 @@ export function createFragranceHydrator(source: Source) {
         store,
         target,
       ]);
-      let entry = cache.get(key);
+      let entry = dryRun ? undefined : cache.get(key);
       if (entry && entry.until > Date.now()) diagnostic.cacheHit = true;
       else {
         if (requests >= MAX_HYDRATION_REQUESTS) return done('budget-exhausted');
@@ -168,8 +176,10 @@ export function createFragranceHydrator(source: Source) {
             current.until = Date.now() + 60_000;
             return { offers: [], diagnostics: [{ store, status: 'failed' as const }] };
           });
-        cache.set(key, current);
-        if (cache.size > 200) cache.delete(cache.keys().next().value!);
+        if (!dryRun) {
+          cache.set(key, current);
+          if (cache.size > 200) cache.delete(cache.keys().next().value!);
+        }
       }
       const result = await entry.pending;
       const offer = verifiedOffers(

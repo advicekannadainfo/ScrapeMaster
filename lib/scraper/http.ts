@@ -1,4 +1,8 @@
 import 'server-only';
+import {
+  reservePreviewProviderRequest,
+  denyPreviewGenericRequest,
+} from './preview-provider-budget';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import axios, { type AxiosRequestConfig } from 'axios';
@@ -34,6 +38,7 @@ async function dedicatedProductRequest(
   if (!key) throw new ScrapeError('ScrapingDog API key is missing.', 'unsupported');
   await assertPublicURL(target);
   await throttle(target);
+  reservePreviewProviderRequest(store, 'product');
   try {
     const response = await axios.get(`https://api.scrapingdog.com/${store}/product`, {
       params: { api_key: key, ...params },
@@ -62,6 +67,7 @@ async function dedicatedSearchRequest(
 ): Promise<string> {
   const key = process.env.SCRAPINGDOG_API_KEY;
   if (!key) throw new ScrapeError('ScrapingDog API key is missing.', 'unsupported');
+  reservePreviewProviderRequest(endpoint, 'search');
   try {
     const response = await axios.get(`https://api.scrapingdog.com/${endpoint}/search`, {
       params: { api_key: key, ...params },
@@ -131,6 +137,7 @@ export async function fetchMyntraSearchJSON(input: string): Promise<string> {
   await assertPublicURL(url);
   await assertRobotsAllowed(url);
   await throttle(url.toString());
+  reservePreviewProviderRequest('myntra', 'search');
   try {
     const response = await axios.get('https://api.scrapingdog.com/myntra/search', {
       params: { api_key: key, url: url.toString() },
@@ -185,6 +192,7 @@ export async function fetchMyntraProductJSON(input: string): Promise<string> {
   const url = new URL(input);
   url.search = '';
   url.hash = '';
+  reservePreviewProviderRequest('myntra', 'product');
   try {
     const response = await axios.get('https://api.scrapingdog.com/myntra/product', {
       params: { api_key: apiKey, url: url.toString() },
@@ -305,6 +313,7 @@ async function fetchViaScrapingDog(url: string): Promise<string> {
 }
 
 export async function fetchHtml(url: string, headers?: Record<string, string>) {
+  denyPreviewGenericRequest();
   await assertPublicURL(url);
   await assertRobotsAllowed(url);
   await throttle(url);
