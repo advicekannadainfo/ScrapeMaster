@@ -1,5 +1,6 @@
 import { fragranceProductLinks } from './fragrance-product-links';
 import { independentFragrance } from '@/lib/scraper/matching/fragrance';
+import { comparisonEvidenceState } from '@/lib/scraper/matching/reliability';
 import type { ProductAssociation } from '@/lib/scraper/matching/observations';
 import 'server-only';
 import ProductModel from '@/lib/models/product.model';
@@ -44,6 +45,17 @@ export async function savedProductOffers(
       status: sourceGate,
       candidates: 0,
       verified: 0,
+      ...(source.title
+        ? {
+            sourceRecord: comparisonEvidenceState({
+              ...source,
+              title: source.title,
+              brand: source.brand ?? undefined,
+              variant: source.variant ?? undefined,
+              comparisonIdentityVerified: source.comparisonIdentityVerified ?? undefined,
+            }),
+          }
+        : {}),
     });
     return [];
   }

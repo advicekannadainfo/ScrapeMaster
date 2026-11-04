@@ -59,6 +59,8 @@ export async function fragranceProductLinks(source: TrackedSource) {
   const links = new Map(prior.map((p) => [p.url, p]));
   const offers = new Map<string, Offer>();
   let priceAnomalies = 0;
+  let identityRejected = 0;
+  let priceUnavailable = 0;
   for (const record of records) {
     const candidate = {
       ...record,
@@ -74,6 +76,7 @@ export async function fragranceProductLinks(source: TrackedSource) {
       !independentFragrance(e) ||
       !isVerifiedProductMatch(input, candidate)
     ) {
+      identityRejected++;
       links.delete(record.url);
       continue;
     }
@@ -83,12 +86,11 @@ export async function fragranceProductLinks(source: TrackedSource) {
       url: record.url,
       identity: e,
     });
-    if (
-      !freshProfilePrice(input) ||
-      !freshProfilePrice(candidate) ||
-      offers.has(record.store)
-    )
+    if (!freshProfilePrice(input) || !freshProfilePrice(candidate)) {
+      priceUnavailable++;
       continue;
+    }
+    if (offers.has(record.store)) continue;
     if (comparisonPriceStatus(record.currentPrice, source.currentPrice) !== 'accepted') {
       priceAnomalies++;
       continue;
@@ -113,6 +115,8 @@ export async function fragranceProductLinks(source: TrackedSource) {
     linked: Math.min(links.size, 40),
     freshOffers: offers.size,
     priceAnomalies,
+    identityRejected,
+    priceUnavailable,
   });
   return { links: [...links.values()].slice(0, 40), offers: [...offers.values()] };
 }

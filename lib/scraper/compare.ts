@@ -1,12 +1,17 @@
-import { readCanonicalIdentity, independentFragrance } from './matching/fragrance';
+import { readCanonicalIdentity } from './matching/fragrance';
 import { categoryDecision } from './matching';
-import { compatibleAttributes, titleAttributes, categoryFor } from './product-identity';
+import { exactMatch, readExactEvidence } from './exact-evidence';
+import {
+  comparisonEvidenceState,
+  comparisonFailureClass,
+  type FailureClass,
+} from './matching/reliability';
+import { titleAttributes, categoryFor } from './product-identity';
 import 'server-only';
 import type { Offer, ScrapedProduct } from '@/types';
 import { isAccessory, comparisonPriceStatus, titleSimilarity } from './match';
 import { regionFromCurrency, searchableStores } from './stores';
 import {
-  isVerifiedMatch,
   comparisonSearchQuery,
   identityFieldsAgree,
   verifiedOffers,
@@ -65,6 +70,8 @@ export async function findOffersWithDiagnostics(
     sourceVolumeEvidence?: { state: 'independent-selected' | 'missing'; field?: string };
     identityAssessment?: { verified: number; mismatch: number; insufficient: number };
     identityReasons?: Record<string, number>;
+    failureClasses?: Partial<Record<FailureClass, number>>;
+    sourceRecord?: ReturnType<typeof comparisonEvidenceState>;
   }[] = [];
 
   const results = await Promise.allSettled(
@@ -83,11 +90,11 @@ export async function findOffersWithDiagnostics(
       const rejections: Record<string, number> = {};
       const identityAssessment = { verified: 0, mismatch: 0, insufficient: 0 };
       const identityReasons: Record<string, number> = {};
+      const failureClasses: Partial<Record<FailureClass, number>> = {};
       const sourceCanonical = readCanonicalIdentity(product.canonicalIdentity);
-      const independent = independentFragrance(product.canonicalIdentity);
-      const sourceEligible =
-        product.comparisonIdentityVerified !== false ||
-        independentFragrance(product.canonicalIdentity);
+      const sourceRecord = comparisonEvidenceState(product);
+      const independent = sourceRecord.state === 'independent';
+      const sourceEligible = product.comparisonIdentityVerified !== false || independent;
       const sourceEvidence = sourceEligible
         ? 'eligible'
         : categoryFor(product.title) === 'perfume' && product.brand && !product.variant
@@ -100,6 +107,7 @@ export async function findOffersWithDiagnostics(
           const a = titleAttributes(`${product.title} ${product.variant ?? ''}`),
             b = titleAttributes(`${offer.title} ${offer.variant ?? ''}`);
           const conflict =
+            exactMatch(product.exactEvidence, offer.exactEvidence) === 'mismatch' ||
             !identityFieldsAgree(product, offer) ||
             Object.entries(a).some(([key, value]) => b[key] && b[key] !== value);
           let reason: string | undefined;
@@ -110,21 +118,22 @@ export async function findOffersWithDiagnostics(
             identityVerified = isVerifiedProductMatch(product, offer);
             if (!identityVerified)
               reason =
-                profile.status === 'verified'
-                  ? 'render-identity-rejected'
-                  : profile.status === 'mismatch' || conflict
-                    ? 'explicit-mismatch'
+                profile.status === 'mismatch' || conflict
+                  ? 'explicit-mismatch'
+                  : profile.status === 'verified'
+                    ? 'render-identity-rejected'
                     : profile.reason === 'concentration-ambiguous' ||
                         profile.reason === 'declaration-conflict'
                       ? 'ambiguous-concentration'
                       : 'insufficient-identity';
           } else if (conflict) reason = 'explicit-mismatch';
-          else if (!(
-            compatibleAttributes(product, offer) &&
-            (isVerifiedMatch(product, offer) || offer !== original)
-          ))
-            reason = 'insufficient-identity';
-          else identityVerified = isVerifiedProductMatch(product, offer);
+          else {
+            // The final verifier already requires independently complete main
+            // facts for the strong-ID route, and strict attributes for legacy
+            // listings. Do not apply a different title/flag gate in discovery.
+            identityVerified = isVerifiedProductMatch(product, offer);
+            if (!identityVerified) reason = 'insufficient-identity';
+          }
           const identityState = identityVerified
             ? 'verified'
             : reason === 'explicit-mismatch' || reason === 'accessory-rejected'
@@ -141,6 +150,8 @@ export async function findOffersWithDiagnostics(
           // certifies a candidate and never triggers paid confirmation automatically.
           if (!reason) {
             if (!identityVerified) reason = 'render-identity-rejected';
+            else if (readExactEvidence(offer.exactEvidence)?.inStock === false)
+              reason = 'stock-unavailable';
             else if (offer.currency !== product.currency) reason = 'currency-rejected';
             else {
               const price = comparisonPriceStatus(offer.price, product.currentPrice);
@@ -156,6 +167,8 @@ export async function findOffersWithDiagnostics(
             reason = 'render-identity-rejected';
           if (reason) {
             rejections[reason] = (rejections[reason] ?? 0) + 1;
+            const failureClass = comparisonFailureClass(reason);
+            failureClasses[failureClass] = (failureClasses[failureClass] ?? 0) + 1;
             return [];
           }
           return [
@@ -177,6 +190,10 @@ export async function findOffersWithDiagnostics(
               ? Object.keys(rejections)[0]
               : 'mixed-rejections',
         sourceEvidence,
+        sourceRecord,
+        failureClasses: !offers.length
+          ? { 'search-discovery-gap': 1 }
+          : { ...failureClasses, ...(ranked.length ? { verified: ranked.length } : {}) },
         sourceIndependentlyValidated: independent,
         sourceConfidence: independent
           ? 'independent-main'
@@ -219,23 +236,26 @@ export async function findOffersWithDiagnostics(
           : r.reason instanceof Error
             ? r.reason.name
             : 'Unknown search failure';
+      const reason = [
+        'blocked',
+        'rate-limited',
+        'unavailable',
+        'timeout',
+        'not-found',
+        'disallowed',
+        'parse',
+        'unsupported',
+      ].includes(observedKind)
+        ? observedKind
+        : 'provider-search-failure';
       diagnostics.push({
         store: stores[i].id,
         status: 'failed',
         candidates: 0,
         verified: 0,
-        reason: [
-          'blocked',
-          'rate-limited',
-          'unavailable',
-          'timeout',
-          'not-found',
-          'disallowed',
-          'parse',
-          'unsupported',
-        ].includes(observedKind)
-          ? observedKind
-          : 'provider-search-failure',
+        reason,
+        failureClasses: { [comparisonFailureClass(reason)]: 1 },
+        sourceRecord: comparisonEvidenceState(product),
       });
     }
   });
@@ -273,6 +293,8 @@ export async function findOffers(
       console.warn('[compare] Search failed', {
         store: diagnostic.store,
         reason: diagnostic.reason,
+        failureClasses: diagnostic.failureClasses,
+        sourceRecord: diagnostic.sourceRecord,
       });
     } else {
       console.info('[compare] Search result', {
@@ -288,6 +310,8 @@ export async function findOffers(
         sourceVolumeEvidence: diagnostic.sourceVolumeEvidence,
         identityAssessment: diagnostic.identityAssessment,
         identityReasons: diagnostic.identityReasons,
+        failureClasses: diagnostic.failureClasses,
+        sourceRecord: diagnostic.sourceRecord,
         profile: diagnostic.profile,
         confidence: diagnostic.confidence,
         discovery: diagnostic.discovery,

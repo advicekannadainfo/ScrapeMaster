@@ -1,11 +1,12 @@
 import { categoryDecision } from './scraper/matching';
 import { freshProfilePrice } from './scraper/matching/observations';
-import { exactMatch, freshSavedPrice, readExactEvidence } from './scraper/exact-evidence';
 import {
-  compatibleAttributes,
-  normalizedValue,
-  titleAttributes,
-} from './scraper/product-identity';
+  exactMatch,
+  freshSavedPrice,
+  readExactEvidence,
+  recordExactEvidence,
+} from './scraper/exact-evidence';
+import { compatibleAttributes, normalizedValue } from './scraper/product-identity';
 import type { Offer } from '@/types';
 import { isAccessory, comparisonPriceStatus } from './scraper/match';
 import { matchingFetchedFragrance } from './scraper/product-candidate-match';
@@ -127,32 +128,8 @@ type Source = MatchIdentity & {
 /** Exact title checks for search; independently fetched same-size fragrance pages may
  * additionally use explicit brand, selected variant and full scent-name evidence. */
 export function isVerifiedProductMatch(source: MatchIdentity, candidate: MatchIdentity) {
-  const consistent = (identity: MatchIdentity) => {
-    const e = readExactEvidence(identity.exactEvidence);
-    if (!e) return identity.exactEvidence == null;
-    const record = identity;
-    if (
-      (record.url && record.url !== e.url) ||
-      (record.store && record.store !== e.store) ||
-      (record.currency && record.currency !== e.currency) ||
-      ((record.currentPrice ?? record.price) !== undefined &&
-        (record.currentPrice ?? record.price) !== e.price)
-    )
-      return false;
-    if (
-      identity.brand &&
-      identity.brand.toLowerCase().replace(/[^a-z0-9]/g, '') !==
-        e.brand.value.toLowerCase().replace(/[^a-z0-9]/g, '')
-    )
-      return false;
-    return Object.entries(
-      titleAttributes(`${identity.title} ${identity.variant ?? ''}`),
-    ).every(
-      ([key, value]) =>
-        !e.selected[key as keyof typeof e.selected] ||
-        normalizedValue(e.selected[key as keyof typeof e.selected]!.value) === value,
-    );
-  };
+  const consistent = (identity: MatchIdentity) =>
+    identity.exactEvidence == null || Boolean(recordExactEvidence(identity));
   if (!consistent(source) || !consistent(candidate)) return false;
   if (
     ['model', 'mpn', 'gtin'].some((field) => {
@@ -219,6 +196,11 @@ export function verifiedOffers(
         !Number.isFinite(offer.price) ||
         offer.price <= 0 ||
         offer.currency !== product.currency
+      )
+        return false;
+      if (
+        offer.store !== product.store &&
+        readExactEvidence(offer.exactEvidence)?.inStock === false
       )
         return false;
       try {

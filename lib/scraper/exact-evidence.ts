@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import { categoryFor, normalizedValue } from './product-identity';
+import { categoryFor, normalizedValue, titleAttributes } from './product-identity';
+import { boundSource } from './matching/contracts';
+import { selectedEvidenceStatus } from './matching/selected-policy';
 const fact = z.object({
   value: z.string().trim().min(1).max(200),
   field: z
@@ -8,6 +10,10 @@ const fact = z.object({
       /^(?:product_information|specifications\.General|selectedSeller\.netQuantity)\.[A-Za-z ]{1,60}$/,
     ),
 });
+const optionalFact = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  fact.optional(),
+);
 const schema = z.object({
   version: z.literal(1),
   store: z.enum(['amazon', 'flipkart', 'myntra.com']),
@@ -18,8 +24,8 @@ const schema = z.object({
   inStock: z.boolean(),
   category: z.string(),
   brand: fact,
-  mpn: fact.optional(),
-  gtin: fact.optional(),
+  mpn: optionalFact,
+  gtin: optionalFact,
   selected: z.record(
     z.enum([
       'colour',
@@ -42,6 +48,10 @@ export function readExactEvidence(value: unknown) {
   const parsed = schema.safeParse(value);
   if (!parsed.success) return undefined;
   const e = parsed.data;
+  if (
+    !boundSource({ store: e.store, url: e.url, kind: 'product', binding: 'url-provider' })
+  )
+    return undefined;
   const prefix =
     e.store === 'amazon'
       ? 'product_information.'
@@ -97,7 +107,46 @@ export function readExactEvidence(value: unknown) {
     const measured = units.exec(normalized);
     if (!measured || Number(measured[1]) <= 0) return undefined;
   }
+  // Omit unknown optional facts before Mixed/BSON persistence. Required facts
+  // and malformed non-null facts are never repaired or defaulted.
+  if (e.mpn === undefined) delete e.mpn;
+  if (e.gtin === undefined) delete e.gtin;
   return e;
+}
+/** Shape/provenance alone does not bind persisted facts to the current record. */
+export function recordExactEvidence(record: {
+  title: string;
+  brand?: string;
+  variant?: string;
+  url?: string;
+  store?: string;
+  currentPrice?: number;
+  price?: number;
+  currency?: string;
+  exactEvidence?: unknown;
+}) {
+  const e = readExactEvidence(record.exactEvidence);
+  if (
+    !e ||
+    e.category !== categoryFor(record.title) ||
+    (record.url && record.url !== e.url) ||
+    (record.store && record.store !== e.store) ||
+    (record.currency && record.currency !== e.currency) ||
+    ((record.currentPrice ?? record.price) !== undefined &&
+      (record.currentPrice ?? record.price) !== e.price) ||
+    (record.brand &&
+      record.brand.toLowerCase().replace(/[^a-z0-9]/g, '') !==
+        e.brand.value.toLowerCase().replace(/[^a-z0-9]/g, ''))
+  )
+    return undefined;
+  const conflict = Object.entries(
+    titleAttributes(`${record.title} ${record.variant ?? ''}`),
+  ).some(
+    ([key, value]) =>
+      e.selected[key as keyof typeof e.selected] &&
+      normalizedValue(e.selected[key as keyof typeof e.selected]!.value) !== value,
+  );
+  return conflict ? undefined : e;
 }
 const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 function gtin(value: string) {
@@ -109,23 +158,13 @@ function gtin(value: string) {
   return total % 10 === 0 ? digits.padStart(14, '0') : undefined;
 }
 type Attribute = keyof ExactEvidence['selected'];
-const required: Record<string, Attribute[]> = {
-  earbuds: ['colour', 'pack'],
-  phone: ['colour', 'ram', 'disk', 'pack'],
-  laptop: ['colour', 'ram', 'disk', 'cpu', 'pack'],
-  fashion: ['colour', 'fashionSize', 'pack'],
-  perfume: ['quantity', 'concentration', 'pack'],
-  grocery: ['quantity', 'pack'],
-  appliance: ['capacity', 'colour', 'pack'],
-};
 export function sufficientExactEvidence(value: unknown) {
   const e = readExactEvidence(value);
   return Boolean(
     e &&
-    required[e.category] &&
+    selectedEvidenceStatus(e.category, e.selected) === 'complete' &&
     (!e.gtin || gtin(e.gtin.value)) &&
-    (e.mpn || (e.gtin && gtin(e.gtin.value))) &&
-    required[e.category].every((k) => e.selected[k]),
+    (e.mpn || (e.gtin && gtin(e.gtin.value))),
   );
 }
 export function exactMatch(
@@ -146,6 +185,7 @@ export function exactMatch(
         return 'mismatch';
     }
   }
+  let missing = false;
   for (const field of new Set([
     ...Object.keys(x.selected),
     ...Object.keys(y.selected),
@@ -157,8 +197,9 @@ export function exactMatch(
         normalizedValue(y.selected[field].value)
     )
       return 'mismatch';
-    if (!x.selected[field] || !y.selected[field]) return 'insufficient';
+    if (!x.selected[field] || !y.selected[field]) missing = true;
   }
+  if (missing) return 'insufficient';
   const identifier =
     (x.mpn &&
       y.mpn &&
@@ -183,7 +224,7 @@ export function mainEvidence(
   prefix: 'product_information' | 'specifications.General',
   retailerIds: string[] = [],
 ) {
-  if (!p.brand) return undefined;
+  if (!p.brand || typeof p.isOutOfStock !== 'boolean') return undefined;
   const get = (name: string) =>
     typeof fields[name] === 'string' && String(fields[name]).trim()
       ? { value: String(fields[name]).trim(), field: `${prefix}.${name}` }
@@ -191,29 +232,44 @@ export function mainEvidence(
   const brand = get('Brand');
   if (!brand || key(brand.value) !== key(p.brand)) return undefined;
   const selected: Record<string, z.infer<typeof fact>> = {};
-  const labels: Record<string, string> = {
-    Color: 'colour',
-    Colour: 'colour',
-    Size: 'fashionSize',
-    RAM: 'ram',
-    Storage: 'disk',
-    Capacity: 'capacity',
-    'Item Volume': 'quantity',
-    'Fragrance Concentration': 'concentration',
-    'Number of Items': 'pack',
+  // Exact MAIN field names already accepted by the reader. No recursive search,
+  // aliases guessed from arbitrary keys, catalog selection or title hydration.
+  const groups: Record<string, string[]> = {
+    colour: ['Color', 'Colour'],
+    fashionSize: ['Size'],
+    ram: ['RAM'],
+    disk: ['Storage'],
+    cpu: ['Processor', 'Processor Name'],
+    capacity: ['Capacity'],
+    quantity: ['Item Volume', 'Quantity', 'Net Quantity'],
+    concentration: ['Fragrance Concentration'],
+    pack: ['Number of Items', 'Pack Size'],
   };
-  for (const [label, attribute] of Object.entries(labels)) {
-    const value = get(label);
-    if (value) selected[attribute] = value;
+  const choose = (names: string[], normalize = normalizedValue) => {
+    if (names.some((name) => fields[name] != null && !get(name)))
+      throw new Error('unsupported-main-fact');
+    const facts = names.flatMap((name) => {
+      const value = get(name);
+      return value ? [value] : [];
+    });
+    if (new Set(facts.map((f) => normalize(f.value))).size > 1)
+      throw new Error('conflicting-main-facts');
+    return facts[0];
+  };
+  let mpn: z.infer<typeof fact> | undefined;
+  let globalId: z.infer<typeof fact> | undefined;
+  try {
+    for (const [attribute, names] of Object.entries(groups)) {
+      const value = choose(names);
+      if (value) selected[attribute] = value;
+    }
+    mpn = choose(['Manufacturer Part Number', 'Model Number'], (s) =>
+      s.trim().toLowerCase(),
+    );
+    globalId = choose(['GTIN', 'EAN', 'UPC'], (s) => gtin(s) ?? s);
+  } catch {
+    return undefined; // Tracking is independent; do not emit contradictory proof.
   }
-  // Two conflicting aliases must not silently overwrite each other.
-  if (
-    get('Color') &&
-    get('Colour') &&
-    normalizedValue(get('Color')!.value) !== normalizedValue(get('Colour')!.value)
-  )
-    return undefined;
-  let mpn = get('Manufacturer Part Number') ?? get('Model Number');
   if (mpn && retailerIds.some((id) => key(id) === key(mpn!.value))) mpn = undefined;
   const e = {
     version: 1,
@@ -225,7 +281,8 @@ export function mainEvidence(
     inStock: !p.isOutOfStock,
     category: categoryFor(p.title),
     brand,
-    mpn,
+    ...(mpn ? { mpn } : {}),
+    ...(globalId ? { gtin: globalId } : {}),
     selected,
   };
   return readExactEvidence(e);
