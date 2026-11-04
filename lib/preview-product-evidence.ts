@@ -50,6 +50,12 @@ export function productEvidenceSummary(record: Record<string, unknown> | null) {
               ? 'valid'
               : 'invalid',
       validationFailures: canonicalValidationFailures(value),
+      optionalAttributeTypes: Object.fromEntries(
+        ['concentration', 'formulation', 'edition'].map((field) => {
+          const v = object(object(value).selected)[field];
+          return [field, v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v];
+        }),
+      ),
       issuesValidated: Boolean(parsed),
       independentlyValidated: independentFragrance(value),
       issues: parsed?.issues ?? [],

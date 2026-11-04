@@ -29,7 +29,7 @@ const offerSchema = new mongoose.Schema(
     currency: { type: String, required: true },
     image: String,
   },
-  { _id: false },
+  { _id: false, minimize: false },
 );
 
 const productSchema = new mongoose.Schema(
@@ -65,7 +65,7 @@ const productSchema = new mongoose.Schema(
     offersCheckedAt: Date,
     candidateLinksCheckedAt: Date,
   },
-  { timestamps: true },
+  { timestamps: true, minimize: false },
 );
 
 productSchema.index({ updatedAt: -1 });

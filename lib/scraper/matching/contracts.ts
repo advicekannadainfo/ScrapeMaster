@@ -5,6 +5,12 @@ export const factSchema = z.object({
   scope: z.enum(['main', 'selected', 'listing', 'legacy']),
 });
 export type IdentityFact = z.infer<typeof factSchema>;
+// BSON's driver defaults can turn an explicit undefined into null. A null in
+// an OPTIONAL fact slot is absence, not a fact. Non-null input stays strict.
+const optionalFact = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  factSchema.optional(),
+);
 export const identitySchema = z.object({
   version: z.literal(1),
   profile: z.literal('fragrance-v1'),
@@ -16,13 +22,13 @@ export const identitySchema = z.object({
     binding: z.enum(['asin', 'seller-sku', 'url-provider', 'listing']),
   }),
   brand: factSchema,
-  line: factSchema.optional(),
+  line: optionalFact,
   selected: z.object({
-    volume: factSchema.optional(),
-    pack: factSchema.optional(),
-    concentration: factSchema.optional(),
-    formulation: factSchema.optional(),
-    edition: factSchema.optional(),
+    volume: optionalFact,
+    pack: optionalFact,
+    concentration: optionalFact,
+    formulation: optionalFact,
+    edition: optionalFact,
   }),
   negated: z.array(z.string().max(30)).max(8),
   issues: z

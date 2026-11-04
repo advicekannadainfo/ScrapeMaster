@@ -74,7 +74,11 @@ const allowedFields: Record<string, string[]> = {
   flipkart: ['product_results.brand', ...selectedVolumeFields.flipkart, 'main.title'],
   'myntra.com': ['product_results.brand', 'selectedSeller.netQuantity', 'main.title'],
 };
-export type CanonicalValidationFailure = { code: string; path: string };
+export type CanonicalValidationFailure = {
+  code: string;
+  path: string;
+  observedType?: string;
+};
 const diagnosticPaths = new Set([
   '$',
   'version',
@@ -137,6 +141,23 @@ export function readCanonicalIdentity(
       onFailure?.({
         code: `schema.${allowedCodes.has(issue.code) ? issue.code : 'invalid'}`,
         path: diagnosticPaths.has(path) ? path : '$',
+        ...(issue.code === 'invalid_type' &&
+        [
+          'null',
+          'undefined',
+          'string',
+          'number',
+          'boolean',
+          'object',
+          'array',
+          'date',
+          'nan',
+          'bigint',
+          'symbol',
+          'function',
+        ].includes(issue.received)
+          ? { observedType: issue.received }
+          : {}),
       });
     }
     return;
@@ -218,7 +239,16 @@ export function readCanonicalIdentity(
     )
       return reject('pack-value-invalid', 'selected.pack.value');
   }
-  return e;
+  // Avoid regenerating BSON null placeholders on all future persistence paths.
+  // Do not mutate the stored input, invent facts or default the selected object.
+  const compact = {
+    ...e,
+    selected: Object.fromEntries(
+      Object.entries(e.selected).filter(([, fact]) => fact !== undefined),
+    ),
+  } as CanonicalIdentity;
+  if (compact.line === undefined) delete compact.line;
+  return compact;
 }
 
 function derive(

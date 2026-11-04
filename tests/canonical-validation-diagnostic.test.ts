@@ -83,7 +83,9 @@ describe('safe canonical validation failures, no relaxed acceptance', () => {
     const value = identity();
     mutate(value);
     expect(readCanonicalIdentity(value)).toBeUndefined();
-    expect(canonicalValidationFailures(value)).toContainEqual({ code, path });
+    expect(canonicalValidationFailures(value)).toContainEqual(
+      expect.objectContaining({ code, path }),
+    );
     expect(JSON.stringify(canonicalValidationFailures(value))).not.toContain('PRIVATE');
   });
   it('bounds schema failures and hides invalid enum options, custom keys and actual values', () => {
@@ -112,10 +114,11 @@ describe('safe canonical validation failures, no relaxed acceptance', () => {
       'volume-unconfirmed',
     );
     const doc = new ProductModel(product); // no connect/save/update/validate call
-    const persisted = doc.toObject();
+    const persisted = doc.toObject({ minimize: true });
     expect(canonicalValidationFailures(persisted.canonicalIdentity)).toContainEqual({
       code: 'schema.invalid_type',
       path: 'selected',
+      observedType: 'undefined',
     });
     expect(
       readCanonicalIdentity(doc.toObject({ minimize: false }).canonicalIdentity),
@@ -125,7 +128,9 @@ describe('safe canonical validation failures, no relaxed acceptance', () => {
       canonicalIdentity: {
         state: 'invalid',
         issuesValidated: false,
-        validationFailures: [{ code: 'schema.invalid_type', path: 'selected' }],
+        validationFailures: [
+          { code: 'schema.invalid_type', path: 'selected', observedType: 'undefined' },
+        ],
       },
       priceObservation: { present: true, boundAndFresh: false },
     });
