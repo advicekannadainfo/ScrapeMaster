@@ -44,6 +44,7 @@ describe('actual dedicated transport boundary hard cap; axios/DNS/robots ALL moc
         /Generic/,
       );
       expect(mocks.get).toHaveBeenCalledTimes(5);
+      expect(mocks.get.mock.calls[0][1].params.url).toBe(DRY_RUN_URL);
       for (const [, options] of mocks.get.mock.calls)
         expect(options.maxRedirects).toBe(0);
     });

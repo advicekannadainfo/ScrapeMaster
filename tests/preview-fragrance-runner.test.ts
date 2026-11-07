@@ -54,7 +54,11 @@ vi.mock('@/lib/services/offers', () => {
 vi.mock('@/lib/services/refresh', () => {
   throw new Error('REFRESH MUST NEVER BE IMPORTED');
 });
-import { runFragranceDryRun, DRY_RUN_URL } from '@/lib/preview-fragrance-dry-run';
+import {
+  runFragranceDryRun,
+  DRY_RUN_URL,
+  DRY_RUN_INPUT_URL,
+} from '@/lib/preview-fragrance-dry-run';
 import { withFragranceProduct } from './support/fragrance-product';
 import { createFragranceHydrator } from '@/lib/scraper/hydrate-fragrance';
 const urls: Record<string, string> = {
@@ -135,6 +139,10 @@ describe('ephemeral Preview orchestration; every provider boundary mocked', () =
       'myntra.com',
     ]);
     expect(source.canonicalIdentity).toBeNull();
+    expect(mocks.load.mock.calls.filter((c) => c[0] === 'flipkart')).toEqual([
+      ['flipkart', DRY_RUN_URL],
+    ]);
+    expect(result.budget.maximum).toBe(5);
   });
   it('stops after the one source fetch if independently selected volume is still missing', async () => {
     const p = product();
@@ -172,5 +180,22 @@ describe('ephemeral Preview orchestration; every provider boundary mocked', () =
     expect((await runFragranceDryRun(product())).budget.used).toBe(4);
     expect((await runFragranceDryRun(product())).budget.used).toBe(4);
     expect(mocks.load).toHaveBeenCalledTimes(4);
+  });
+  it('does not rebind short-URL evidence to the full stored URL without a fresh Product response', async () => {
+    const stored = product();
+    const e = structuredClone(stored.canonicalIdentity)!;
+    e.source.url = DRY_RUN_INPUT_URL;
+    stored.canonicalIdentity = e;
+    const before = JSON.stringify(stored);
+    const result = await runFragranceDryRun(stored);
+    expect(result.source).toMatchObject({ fetched: true, status: 'verified' });
+    expect(mocks.load.mock.calls.filter((c) => c[0] === 'flipkart')).toEqual([
+      ['flipkart', DRY_RUN_URL],
+    ]);
+    expect(result.budget.used).toBe(5);
+    expect(JSON.stringify(stored)).toBe(before);
+    expect(
+      (await runFragranceDryRun({ ...stored, url: DRY_RUN_INPUT_URL })).budget.used,
+    ).toBe(0);
   });
 });

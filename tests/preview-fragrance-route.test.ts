@@ -13,7 +13,7 @@ vi.mock('@/lib/preview-fragrance-dry-run', async (original) => ({
   runFragranceDryRun: mocks.run,
 }));
 import { POST } from '@/app/api/preview/fragrance-dry-run/route';
-import { DRY_RUN_URL } from '@/lib/preview-fragrance-dry-run';
+import { DRY_RUN_URL, DRY_RUN_INPUT_URL } from '@/lib/preview-fragrance-dry-run';
 import { NextRequest } from 'next/server';
 const request = (
   body: unknown = { url: DRY_RUN_URL },
@@ -70,6 +70,8 @@ describe('protected Preview POST: one native projected read, no business-record 
     { url: [DRY_RUN_URL] },
     { url: DRY_RUN_URL, extra: 'bad' },
     {},
+    { url: `${DRY_RUN_INPUT_URL}&lid=UNAPPROVED` },
+    { url: DRY_RUN_URL.replace('PERHHHH3RYADXXH5', 'UNAPPROVEDPID') },
   ])('rejects non-single or unapproved target %j', async (body) => {
     expect((await POST(request(body))).status).toBe(400);
     expect(mocks.Client).not.toHaveBeenCalled();
@@ -97,6 +99,25 @@ describe('protected Preview POST: one native projected read, no business-record 
     );
     expect(mocks.write).not.toHaveBeenCalled();
     expect(response.headers.get('cache-control')).toContain('no-store');
+  });
+  it('maps the approved short POST input to the exact full stored URL with one read', async () => {
+    const stored = { title: 'PRIVATE_DATA', store: 'flipkart', url: DRY_RUN_URL };
+    mocks.findOne.mockImplementation(async (filter) =>
+      filter.url === DRY_RUN_URL ? stored : null,
+    );
+    const response = await POST(request({ url: DRY_RUN_INPUT_URL }));
+    expect(response.status).toBe(200);
+    expect(mocks.findOne).toHaveBeenCalledTimes(1);
+    expect(mocks.findOne.mock.calls[0][0]).toEqual({
+      store: 'flipkart',
+      url: DRY_RUN_URL,
+    });
+    expect(DRY_RUN_URL).toBe(
+      `${DRY_RUN_INPUT_URL}&lid=LSTPERHHHH3RYADXXH5O3A3JX&marketplace=FLIPKART&cmpid=content_perfume_8965229628_gmc`,
+    );
+    expect(mocks.run).toHaveBeenCalledWith(stored);
+    expect(stored.url).toBe(DRY_RUN_URL);
+    expect(mocks.write).not.toHaveBeenCalled();
   });
   it('does not create missing records and redacts database/provider errors', async () => {
     mocks.findOne.mockResolvedValueOnce(null);

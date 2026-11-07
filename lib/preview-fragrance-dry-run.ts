@@ -14,16 +14,18 @@ import { withPreviewProviderBudget } from './scraper/preview-provider-budget';
 import { categoryFor } from './scraper/product-identity';
 import { scrapeProduct } from './scraper';
 import { loadAndParse } from './scraper/load';
-export const DRY_RUN_URL =
+export const DRY_RUN_INPUT_URL =
   'https://www.flipkart.com/bla-bli-blu-old-money-perfume-men-apple-cedar-notes-perfume-men-long-lasting-30-ml/p/itmbe299cbfa6eb1?pid=PERHHHH3RYADXXH5';
+// Explicit diagnostic alias only. Stored evidence and optional Product fetches
+// must use the exact original URL, including its retained selectors/parameters.
+export const DRY_RUN_URL = `${DRY_RUN_INPUT_URL}&lid=LSTPERHHHH3RYADXXH5O3A3JX&marketplace=FLIPKART&cmpid=content_perfume_8965229628_gmc`;
 export function dryRunTarget(value: unknown) {
   const parsed = z
     .object({ url: z.string().max(2048) })
     .strict()
     .safeParse(value);
-  return parsed.success && evidenceLookupURL(parsed.data.url) === DRY_RUN_URL
-    ? DRY_RUN_URL
-    : undefined;
+  const input = parsed.success ? evidenceLookupURL(parsed.data.url) : undefined;
+  return input === DRY_RUN_INPUT_URL || input === DRY_RUN_URL ? DRY_RUN_URL : undefined;
 }
 const recordSchema = z.object({
   title: z.string().min(1).max(4000),
