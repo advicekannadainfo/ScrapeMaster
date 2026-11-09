@@ -10,7 +10,10 @@ import {
 import { freshProfilePrice } from './scraper/matching/observations';
 import { fragranceDiscoveryQuery } from './scraper/product-candidate-match';
 import { createFragranceHydrator } from './scraper/hydrate-fragrance';
-import { withPreviewProviderBudget } from './scraper/preview-provider-budget';
+import {
+  withPreviewProviderBudget,
+  type PreviewProviderMode,
+} from './scraper/preview-provider-budget';
 import { categoryFor } from './scraper/product-identity';
 import { scrapeProduct } from './scraper';
 import { loadAndParse } from './scraper/load';
@@ -19,13 +22,18 @@ export const DRY_RUN_INPUT_URL =
 // Explicit diagnostic alias only. Stored evidence and optional Product fetches
 // must use the exact original URL, including its retained selectors/parameters.
 export const DRY_RUN_URL = `${DRY_RUN_INPUT_URL}&lid=LSTPERHHHH3RYADXXH5O3A3JX&marketplace=FLIPKART&cmpid=content_perfume_8965229628_gmc`;
-export function dryRunTarget(value: unknown) {
+export function parseDryRunRequest(value: unknown) {
   const parsed = z
-    .object({ url: z.string().max(2048) })
+    .object({
+      url: z.string().max(2048),
+      mode: z.enum(['all', 'amazon-only']).default('all'),
+    })
     .strict()
     .safeParse(value);
   const input = parsed.success ? evidenceLookupURL(parsed.data.url) : undefined;
-  return input === DRY_RUN_INPUT_URL || input === DRY_RUN_URL ? DRY_RUN_URL : undefined;
+  return parsed.success && (input === DRY_RUN_INPUT_URL || input === DRY_RUN_URL)
+    ? { url: DRY_RUN_URL, mode: parsed.data.mode }
+    : undefined;
 }
 const recordSchema = z.object({
   title: z.string().min(1).max(4000),
@@ -44,10 +52,13 @@ const recordSchema = z.object({
   exactEvidence: z.unknown().optional(),
 });
 /** Only adapters/parsers and ephemeral verification; no write-service imports. */
-export async function runFragranceDryRun(record: unknown) {
+export async function runFragranceDryRun(
+  record: unknown,
+  mode: PreviewProviderMode = 'all',
+) {
   return withPreviewProviderBudget(async (budget) => {
     const budgetSummary = () => ({
-      maximum: 5,
+      maximum: budget.maximum,
       used: budget.used,
       routes: { ...budget.routes },
     });
@@ -104,7 +115,7 @@ export async function runFragranceDryRun(record: unknown) {
       };
     const hydrator = createFragranceHydrator(source, { previewDryRun: true });
     const stores = await Promise.all(
-      [amazon, myntra].map(async (adapter) => {
+      (mode === 'amazon-only' ? [amazon] : [amazon, myntra]).map(async (adapter) => {
         try {
           const search = adapter.search;
           if (!search?.load) throw new Error('Dedicated search unavailable');
@@ -149,5 +160,5 @@ export async function runFragranceDryRun(record: unknown) {
       stores,
       budget: budgetSummary(),
     };
-  });
+  }, mode);
 }

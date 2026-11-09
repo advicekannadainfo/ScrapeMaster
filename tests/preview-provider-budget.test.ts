@@ -67,4 +67,44 @@ describe('actual dedicated transport boundary hard cap; axios/DNS/robots ALL moc
     await expect(withPreviewProviderBudget(async () => {})).rejects.toThrow(/Preview/);
     expect(mocks.get).not.toHaveBeenCalled();
   });
+  it('enforces the three-slot Amazon-only budget at the HTTP boundary, denying Myntra and every repeat', async () => {
+    await withPreviewProviderBudget(async (budget) => {
+      expect(budget.maximum).toBe(3);
+      await expect(
+        fetchMyntraSearchJSON('https://www.myntra.com/test-perfume'),
+      ).rejects.toThrow(/denied/);
+      await expect(
+        fetchMyntraProductJSON('https://www.myntra.com/perfume/12345678/buy'),
+      ).rejects.toThrow(/denied/);
+      expect(budget.used).toBe(0);
+      await fetchFlipkartProductJSON(DRY_RUN_URL);
+      await fetchAmazonSearchJSON('test perfume');
+      await fetchAmazonProductJSON('https://www.amazon.in/dp/B0TEST0001');
+      await expect(fetchAmazonSearchJSON('second page')).rejects.toThrow(/budget/);
+      await expect(
+        fetchAmazonProductJSON('https://www.amazon.in/dp/B0TEST0002'),
+      ).rejects.toThrow(/budget/);
+      await expect(fetchFlipkartProductJSON(DRY_RUN_URL)).rejects.toThrow(/budget/);
+      await expect(fetchHtml(DRY_RUN_URL)).rejects.toThrow(/Generic/);
+      expect(budget.used).toBe(3);
+      expect(budget.routes).toEqual({
+        'flipkart:product': 1,
+        'amazon:search': 1,
+        'amazon:product': 1,
+      });
+      expect(mocks.get).toHaveBeenCalledTimes(3);
+      for (const [, options] of mocks.get.mock.calls)
+        expect(options.maxRedirects).toBe(0);
+    }, 'amazon-only');
+  });
+  it('counts a failed Amazon-only attempt and never retries or accepts a nested wider budget', async () => {
+    mocks.get.mockRejectedValue(new Error('PRIVATE_TOKEN'));
+    await withPreviewProviderBudget(async (budget) => {
+      await expect(fetchAmazonSearchJSON('test')).rejects.toThrow('Search API failed');
+      await expect(fetchAmazonSearchJSON('test')).rejects.toThrow(/budget/);
+      await expect(withPreviewProviderBudget(async () => {})).rejects.toThrow(/Nested/);
+      expect(budget.used).toBe(1);
+      expect(mocks.get).toHaveBeenCalledTimes(1);
+    }, 'amazon-only');
+  });
 });

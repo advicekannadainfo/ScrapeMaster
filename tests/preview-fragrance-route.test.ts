@@ -72,6 +72,9 @@ describe('protected Preview POST: one native projected read, no business-record 
     {},
     { url: `${DRY_RUN_INPUT_URL}&lid=UNAPPROVED` },
     { url: DRY_RUN_URL.replace('PERHHHH3RYADXXH5', 'UNAPPROVEDPID') },
+    { url: DRY_RUN_URL, mode: 'myntra-only' },
+    { url: DRY_RUN_URL, mode: 'amazon-only', maximum: 10 },
+    { url: 'https://evil.example', mode: 'amazon-only' },
   ])('rejects non-single or unapproved target %j', async (body) => {
     expect((await POST(request(body))).status).toBe(400);
     expect(mocks.Client).not.toHaveBeenCalled();
@@ -115,7 +118,7 @@ describe('protected Preview POST: one native projected read, no business-record 
     expect(DRY_RUN_URL).toBe(
       `${DRY_RUN_INPUT_URL}&lid=LSTPERHHHH3RYADXXH5O3A3JX&marketplace=FLIPKART&cmpid=content_perfume_8965229628_gmc`,
     );
-    expect(mocks.run).toHaveBeenCalledWith(stored);
+    expect(mocks.run).toHaveBeenCalledWith(stored, 'all');
     expect(stored.url).toBe(DRY_RUN_URL);
     expect(mocks.write).not.toHaveBeenCalled();
   });
@@ -128,6 +131,35 @@ describe('protected Preview POST: one native projected read, no business-record 
     const response = await POST(request());
     expect(response.status).toBe(503);
     expect(JSON.stringify(await response.json())).not.toMatch(/PRIVATE|api_key|secret/);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it('binds Amazon-only short input to the exact stored URL with one read and no writes', async () => {
+    const stored = { title: 'PRIVATE_DATA', store: 'flipkart', url: DRY_RUN_URL };
+    mocks.findOne.mockResolvedValue(stored);
+    const response = await POST(request({ url: DRY_RUN_INPUT_URL, mode: 'amazon-only' }));
+    expect(response.status).toBe(200);
+    expect(mocks.findOne).toHaveBeenCalledTimes(1);
+    expect(mocks.findOne).toHaveBeenCalledWith(
+      { store: 'flipkart', url: DRY_RUN_URL },
+      expect.objectContaining({ projection: expect.objectContaining({ _id: 0 }) }),
+    );
+    expect(mocks.run).toHaveBeenCalledTimes(1);
+    expect(mocks.run).toHaveBeenCalledWith(stored, 'amazon-only');
+    expect(mocks.close.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.run.mock.invocationCallOrder[0],
+    );
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it('keeps Amazon-only authentication, Preview and global-flag restrictions ahead of DB/provider access', async () => {
+    const body = { url: DRY_RUN_INPUT_URL, mode: 'amazon-only' };
+    expect((await POST(request(body, 'Bearer wrong'))).status).toBe(401);
+    vi.stubEnv('VERCEL_ENV', 'production');
+    expect((await POST(request(body))).status).toBe(404);
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION', 'true');
+    expect((await POST(request(body))).status).toBe(503);
+    expect(mocks.Client).not.toHaveBeenCalled();
+    expect(mocks.run).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();
   });
 });

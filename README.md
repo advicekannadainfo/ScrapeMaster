@@ -109,17 +109,57 @@ No environment setting is enabled by adding this code.
 
 `POST /api/preview/fragrance-dry-run` is an isolated diagnostic, never called by
 the normal UI. It requires `VERCEL_ENV=preview` and Bearer `CRON_SECRET`, and
-rejects a globally enabled hydration flag. Its strict JSON body accepts only
-`{"url":"<the approved Old Money 30ml Flipkart URL>"}`. One native MongoDB
+rejects a globally enabled hydration flag. Its strict JSON body accepts
+`{"url":"<the approved Old Money 30ml Flipkart URL>","mode":"amazon-only"}`
+for the Amazon-only diagnostic. Only the existing allowlisted short URL or its
+exact full stored URL is accepted; both resolve to that full stored URL. Unknown
+modes, extra body fields and query parameters are rejected. Omitting `mode` (or
+using `"all"`) preserves the original two-competitor diagnostic. One native MongoDB
 projected read is closed before provider work; no write services or model index
 initialization are used. A source fetch, if necessary, is ephemeral. Dedicated
-HTTP transports enforce five one-use slots per invocation: Flipkart Product,
-Amazon Search/Product, Myntra Search/Product. Generic fallback is denied; no
+HTTP transports enforce **at most three attempts in Amazon-only mode**: Flipkart
+source Product once if needed, Amazon Search once, Amazon candidate Product once.
+Myntra routes are denied in this mode. A fresh, independently evidenced saved
+source avoids the source call (at most two attempts). Missing source selected-size
+proof stops before Search. The original `all` mode retains five one-use slots:
+Flipkart Product, Amazon Search/Product, Myntra Search/Product. Failed provider
+attempts consume their slots too. Generic fallback is denied; no
 retry, pagination, second candidate, cache promotion or DB write occurs. The
-five-request cap counts ScrapingDog requests, not its variable credit charges.
+request cap counts ScrapingDog attempts, not its variable credit charges.
 Existing DNS/robots restrictions still apply. Responses contain only bounded
 statuses/counts and proof/freshness outcomes, never raw products or subscribers.
+The response includes actual `budget.used`, `budget.maximum`, per-route counts,
+search/eligible candidate counts and allowlisted `rejectionReason` codes when a
+Product is rejected. A code is the first failed verification check, not a raw
+provider error. A rejected Product never causes a second candidate request.
 Do not invoke this endpoint without separate approval for the paid dry run.
+
+### Minimum prerequisites for a real Preview website test
+
+1. Deploy this feature commit as a Preview. Point **Preview only** at a separate,
+   empty test database with a database-scoped user that cannot access Production.
+   Verify the database name/access scope privately before any UI action. Do not
+   copy customer records or alter Production settings. The website writes product,
+   history and offer records, unlike the read-only diagnostic above.
+2. Keep global hydration unset/`false` for the diagnostic. A real automatic
+   Search-to-Product website test requires **separate approval** to temporarily set
+   `MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION=true` on the isolated Preview only;
+   this task does not enable it. Keep scheduled refreshes, bulk jobs and email
+   delivery disabled/absent on the test deployment. Do not submit an alert email.
+3. Approve one test URL and its paid-call budget before clicking **Track Price**
+   once. Tracking already launches automatic comparison after responding: for
+   these three dedicated stores, the upper bound with hydration enabled is
+   **five provider attempts** (one source Product, up to two Search, up to two
+   competitor Products), fewer on cache hits or missing evidence. Each candidate
+   Product is attempted once, without paid fallback or retries. This diagnostic's
+   three-attempt Amazon-only cap does **not** apply to the website.
+4. Wait for that automatic comparison and reload the product page; verify the
+   source details and only independently verified, fresh competitor offers. Do
+   not immediately click **Compare Stores** again. If a separate manual Compare
+   test is approved after the existing ten-minute cooldown, budget up to four
+   additional attempts (two Search + two Products); cache hits may reduce this.
+   Missing selected-size proof remains unverified. Restore the Preview flag to
+   `false` after the approved test. No live website testing is performed here.
 
 For rendered product pages through ScrapingDog, set `SCRAPINGDOG_API_KEY`
 in `.env.local`, Vercel environment variables, and the GitHub Actions repository

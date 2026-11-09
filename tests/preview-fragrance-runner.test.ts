@@ -215,4 +215,101 @@ describe('ephemeral Preview orchestration; every provider boundary mocked', () =
       /Old Money|https|offline-key|canonicalIdentity|priceObservation/,
     );
   });
+  it.each([false, true])(
+    'Amazon-only uses at most three attempts (source refresh=%s), never Myntra or DB writes',
+    async (refresh) => {
+      const source = product();
+      const record = refresh ? { ...source, canonicalIdentity: null } : source;
+      const before = JSON.stringify(record);
+      const result = await runFragranceDryRun(record, 'amazon-only');
+      expect(result.budget).toEqual({
+        maximum: 3,
+        used: refresh ? 3 : 2,
+        routes: {
+          ...(refresh ? { 'flipkart:product': 1 } : {}),
+          'amazon:search': 1,
+          'amazon:product': 1,
+        },
+      });
+      expect(result.stores).toHaveLength(1);
+      expect(result.stores[0]).toMatchObject({
+        store: 'amazon',
+        verification: 'verified',
+        searchFound: 1,
+        eligibleCandidates: 1,
+      });
+      expect(mocks.search).toHaveBeenCalledTimes(1);
+      expect(mocks.search).toHaveBeenCalledWith('amazon');
+      expect(mocks.load.mock.calls).toEqual([
+        ...(refresh ? [['flipkart', DRY_RUN_URL]] : []),
+        ['amazon', urls.amazon],
+      ]);
+      expect(JSON.stringify(record)).toBe(before);
+      expect(process.env.MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION).toBe('false');
+    },
+  );
+  it('Amazon-only stops after source proof failure, preserving strict URL binding', async () => {
+    const p = product();
+    delete p.canonicalIdentity!.selected.volume;
+    p.canonicalIdentity!.issues = ['volume-unconfirmed'];
+    mocks.load.mockResolvedValue(JSON.stringify(p));
+    const result = await runFragranceDryRun(
+      { ...product(), canonicalIdentity: null },
+      'amazon-only',
+    );
+    expect(result.source.status).toBe('selected-product-proof-missing');
+    expect(result.budget).toMatchObject({ maximum: 3, used: 1 });
+    expect(result.stores).toEqual([]);
+    expect(mocks.search).not.toHaveBeenCalled();
+    const unbound = await runFragranceDryRun(
+      { ...product(), url: DRY_RUN_INPUT_URL },
+      'amazon-only',
+    );
+    expect(unbound.budget.used).toBe(0);
+  });
+  it('Amazon-only preserves sanitized rejection details without trying a second candidate or another store', async () => {
+    mocks.load.mockImplementation(async (store: string) =>
+      JSON.stringify({ ...product(store), currentPrice: store === 'amazon' ? 201 : 200 }),
+    );
+    mocks.search.mockResolvedValue(
+      JSON.stringify([
+        { ...product('amazon'), price: 200 },
+        { ...product('amazon'), url: 'https://www.amazon.in/dp/B0TEST0002', price: 200 },
+      ]),
+    );
+    const result = await runFragranceDryRun(
+      { ...product(), canonicalIdentity: null },
+      'amazon-only',
+    );
+    expect(result.budget.used).toBe(3);
+    expect(result.stores[0]).toMatchObject({
+      store: 'amazon',
+      searchFound: 2,
+      eligibleCandidates: 2,
+      verification: 'rejected',
+      rejectionReason: 'stale-or-unbound-price',
+    });
+    expect(mocks.load).toHaveBeenCalledTimes(2);
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search).toHaveBeenCalledWith('amazon');
+    expect(JSON.stringify(result)).not.toMatch(
+      /Old Money|https|offline-key|canonicalIdentity/,
+    );
+  });
+  it('Amazon-only does not retry failed Search or Product attempts', async () => {
+    mocks.search.mockRejectedValueOnce(new Error('PRIVATE_SEARCH_TOKEN'));
+    const searchFailure = await runFragranceDryRun(product(), 'amazon-only');
+    expect(searchFailure.budget.used).toBe(1);
+    expect(searchFailure.stores[0].reason).toBe('search-failed');
+    expect(mocks.load).not.toHaveBeenCalled();
+    mocks.load.mockRejectedValueOnce(new Error('PRIVATE_PRODUCT_TOKEN'));
+    const productFailure = await runFragranceDryRun(product(), 'amazon-only');
+    expect(productFailure.budget.used).toBe(2);
+    expect(productFailure.stores[0]).toMatchObject({
+      rejectionReason: 'provider-failure',
+    });
+    expect(mocks.load).toHaveBeenCalledTimes(1);
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify([searchFailure, productFailure])).not.toContain('PRIVATE');
+  });
 });

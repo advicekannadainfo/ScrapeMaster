@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import mongoose from 'mongoose';
 import { authorizeEvidenceRead } from '@/lib/preview-product-evidence';
-import { dryRunTarget, runFragranceDryRun } from '@/lib/preview-fragrance-dry-run';
+import { parseDryRunRequest, runFragranceDryRun } from '@/lib/preview-fragrance-dry-run';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -35,8 +35,8 @@ export async function POST(request: NextRequest) {
       { status: 400, headers },
     );
   }
-  const url = dryRunTarget(input);
-  if (!url)
+  const target = parseDryRunRequest(input);
+  if (!target)
     return NextResponse.json(
       { error: 'One approved product URL required' },
       { status: 400, headers },
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       .db()
       .collection('products')
       .findOne(
-        { store: 'flipkart', url },
+        { store: 'flipkart', url: target.url },
         {
           projection: {
             _id: 0,
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     // Close the read connection before any potentially slow provider operations.
     await client.close();
     client = undefined;
-    return NextResponse.json(await runFragranceDryRun(record), { headers });
+    return NextResponse.json(await runFragranceDryRun(record, target.mode), { headers });
   } catch {
     return NextResponse.json({ error: 'Dry run unavailable' }, { status: 503, headers });
   } finally {
