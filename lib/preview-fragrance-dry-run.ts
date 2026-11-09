@@ -122,6 +122,9 @@ export async function runFragranceDryRun(record: unknown) {
             verification: checked.offer ? 'verified' : 'rejected',
             freshPrice: checked.offer ? 'fresh' : 'unverified',
             reason: checked.diagnostic.status,
+            ...(checked.diagnostic.rejectionReason
+              ? { rejectionReason: checked.diagnostic.rejectionReason }
+              : {}),
             eligibleCandidates: checked.diagnostic.eligibleCandidates,
           };
         } catch {

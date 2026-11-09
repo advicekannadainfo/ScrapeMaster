@@ -132,6 +132,7 @@ describe('bounded automatic fragrance Product hydration: ALL provider calls mock
     const a = await create(source).verify('amazon', rows);
     const b = await create(source).verify('amazon', rows);
     expect(a.diagnostic.status).toBe('product-failed');
+    expect(a.diagnostic.rejectionReason).toBe('provider-failure');
     expect(b.diagnostic.cacheHit).toBe(true);
     expect(mocks.scrape).toHaveBeenCalledTimes(1);
     expect(JSON.stringify([a, b])).not.toMatch(/PRIVATE|api_key|https/);
@@ -172,6 +173,17 @@ describe('bounded automatic fragrance Product hydration: ALL provider calls mock
     const result = await create(product('flipkart')).verify('amazon', [listing()]);
     expect(result.offer).toBeUndefined();
     expect(result.diagnostic.status).toBe('missing-provider-proof');
+    expect(result.diagnostic.rejectionReason).toBe(
+      {
+        'missing-volume': 'missing-selected-size',
+        'wrong-size': 'identity-mismatch',
+        'wrong-scent': 'identity-mismatch',
+        'wrong-formulation': 'formulation-unconfirmed',
+        'unbound-price': 'stale-or-unbound-price',
+        'stale-price': 'stale-or-unbound-price',
+        'out-of-stock': 'out-of-stock',
+      }[change],
+    );
     expect(mocks.scrape).toHaveBeenCalledTimes(1);
   });
   it('integrates into real Compare flow for two stores with explicit diagnostics and no extra searches', async () => {
@@ -244,5 +256,53 @@ describe('bounded automatic fragrance Product hydration: ALL provider calls mock
       productRequests: 0,
     });
     expect(mocks.scrape).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['Perfume Oil', 'Body Mist', 'formulation-conflict'],
+    ['EDP', 'EDT', 'concentration-conflict'],
+  ])(
+    'reports %s versus %s as a bounded rejection code',
+    async (sourceDeclaration, candidateDeclaration, reason) => {
+      const a = product('flipkart'),
+        b = product();
+      const source = {
+        ...a,
+        ...withFragranceProduct({ ...a, title: `${a.title} ${sourceDeclaration}` }),
+      };
+      const candidate = {
+        ...b,
+        ...withFragranceProduct({ ...b, title: `${b.title} ${candidateDeclaration}` }),
+      };
+      mocks.scrape.mockResolvedValue(candidate);
+      const result = await create(source).verify('amazon', [listing()]);
+      expect(result.diagnostic.rejectionReason).toBe(reason);
+      expect(result.offer).toBeUndefined();
+      expect(mocks.scrape).toHaveBeenCalledTimes(1);
+    },
+  );
+  it('distinguishes a valid bound price anomaly from invalid price and sanitized parser failure', async () => {
+    const { ScrapeError } = await import('@/lib/scraper/errors');
+    const source = product('flipkart');
+    const p = product();
+    p.currentPrice = 1000;
+    p.priceObservation = observeProduct(p.canonicalIdentity, 1000, '₹', false);
+    mocks.scrape.mockResolvedValueOnce(p);
+    const a = await create(source).verify('amazon', [listing()]);
+    expect(a.diagnostic.rejectionReason).toBe('price-anomaly');
+    // Change source price context to avoid reusing the prior cache entry.
+    mocks.scrape.mockResolvedValueOnce({ ...product(), currentPrice: 0 });
+    expect(
+      (await create({ ...source, currentPrice: 201 }).verify('amazon', [listing()]))
+        .diagnostic.rejectionReason,
+    ).toBe('invalid-price');
+    mocks.scrape.mockRejectedValueOnce(
+      new ScrapeError('PRIVATE_RAW_RESPONSE api_key=private', 'parse'),
+    );
+    const c = await create({ ...source, currentPrice: 202 }).verify('amazon', [
+      listing(),
+    ]);
+    expect(c.diagnostic.rejectionReason).toBe('provider-parse-failure');
+    expect(JSON.stringify(c)).not.toMatch(/PRIVATE|api_key|private/);
+    expect(mocks.scrape).toHaveBeenCalledTimes(3); // three independent contexts; no retries
   });
 });

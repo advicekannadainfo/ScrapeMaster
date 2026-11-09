@@ -13,7 +13,11 @@ import { enrichSearchFragranceIdentity } from './product-candidate-match';
 import { categoryFor, titleAttributes } from './product-identity';
 import { isAccessory, titleSimilarity } from './match';
 import { resolveStore } from './stores';
-import { verifyCandidateLinks } from './verify-candidate-links';
+import {
+  verifyCandidateLinks,
+  safeCandidateRejectionReason,
+  type CandidateRejectionReason,
+} from './verify-candidate-links';
 import { previewBudgetActive } from './preview-provider-budget';
 
 export const HYDRATION_FLAG = 'MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION';
@@ -36,6 +40,7 @@ export type HydrationDiagnostic = {
   eligibleCandidates: number;
   productRequests: number;
   cacheHit: boolean;
+  rejectionReason?: CandidateRejectionReason;
 };
 const cache = new Map<string, { until: number; pending: Promise<Verification> }>();
 
@@ -66,9 +71,17 @@ export function createFragranceHydrator(
         productRequests: 0,
         cacheHit: false,
       };
-      const done = (status: HydrationDiagnostic['status'], offer?: Offer) => ({
+      const done = (
+        status: HydrationDiagnostic['status'],
+        offer?: Offer,
+        rejectionReason?: CandidateRejectionReason,
+      ) => ({
         offer,
-        diagnostic: { ...diagnostic, status },
+        diagnostic: {
+          ...diagnostic,
+          status,
+          ...(rejectionReason ? { rejectionReason } : {}),
+        },
       });
       if (!enabled) return done('disabled');
       const sourceIdentity = fragranceIdentity(source);
@@ -174,7 +187,12 @@ export function createFragranceHydrator(
           })
           .catch(() => {
             current.until = Date.now() + 60_000;
-            return { offers: [], diagnostics: [{ store, status: 'failed' as const }] };
+            return {
+              offers: [],
+              diagnostics: [
+                { store, status: 'failed' as const, reason: 'provider-failure' as const },
+              ],
+            };
           });
         if (!dryRun) {
           cache.set(key, current);
@@ -187,10 +205,19 @@ export function createFragranceHydrator(
         result.offers.filter((o) => o.store === store && o.url === target),
       )[0];
       if (offer) return done('product-verified', offer);
+      const rejected = result.diagnostics.find((d) => d.status !== 'verified');
+      const reason =
+        safeCandidateRejectionReason(rejected?.reason) ??
+        (result.offers.length &&
+        !result.offers.some((o) => o.store === store && o.url === target)
+          ? 'requested-url-mismatch'
+          : 'post-verification-rejected');
       return done(
         result.diagnostics.some((d) => d.status === 'failed')
           ? 'product-failed'
           : 'missing-provider-proof',
+        undefined,
+        reason,
       );
     },
   };

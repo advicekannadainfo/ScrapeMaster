@@ -198,4 +198,21 @@ describe('ephemeral Preview orchestration; every provider boundary mocked', () =
       (await runFragranceDryRun({ ...stored, url: DRY_RUN_INPUT_URL })).budget.used,
     ).toBe(0);
   });
+  it('returns the sanitized per-store rejection code without retaining raw provider evidence', async () => {
+    mocks.load.mockImplementation(async (store: string) =>
+      JSON.stringify({ ...product(store), currentPrice: store === 'amazon' ? 201 : 200 }),
+    );
+    const result = await runFragranceDryRun({ ...product(), canonicalIdentity: null });
+    expect(result.budget.used).toBe(5);
+    expect(result.stores.find((s) => s.store === 'amazon')).toMatchObject({
+      reason: 'missing-provider-proof',
+      rejectionReason: 'stale-or-unbound-price',
+    });
+    expect(result.stores.find((s) => s.store === 'myntra.com')?.verification).toBe(
+      'verified',
+    );
+    expect(JSON.stringify(result)).not.toMatch(
+      /Old Money|https|offline-key|canonicalIdentity|priceObservation/,
+    );
+  });
 });
