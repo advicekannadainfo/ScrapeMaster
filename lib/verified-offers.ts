@@ -273,6 +273,11 @@ export function verifiedOffers(
         categoryFor(offer.title) === 'perfume'
       ) {
         if (
+          categoryDecision(product, offer)?.reason === 'independent-package-evidence' &&
+          !freshProfilePrice(product)
+        )
+          return false;
+        if (
           profileOfferObservationStatus(offer) !== 'consistent' ||
           !freshProfilePrice({
             ...offer,

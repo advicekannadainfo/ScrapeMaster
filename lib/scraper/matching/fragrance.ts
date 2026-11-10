@@ -1,6 +1,7 @@
 import { volumeMl, selectedVolumeFields } from './selected-volume';
 export { volumeMl } from './selected-volume';
 import { fragranceContext } from './context';
+import { normalizedGTIN } from '../exact-evidence';
 import {
   brandKey,
   boundSource,
@@ -70,8 +71,21 @@ const allowedFields: Record<string, string[]> = {
     'product_information.Package Size Name',
     'product_information.Fragrance Concentration',
     'main.title',
+    'product_information.GTIN',
+    'product_information.EAN',
+    'product_information.UPC',
   ],
-  flipkart: ['product_results.brand', ...selectedVolumeFields.flipkart, 'main.title'],
+  flipkart: [
+    'product_results.brand',
+    ...selectedVolumeFields.flipkart,
+    'main.title',
+    'specifications.General.GTIN',
+    'specifications.General.EAN',
+    'specifications.General.UPC',
+    'specifications.General.Number of Items',
+    'specifications.General.Pack Size',
+    'specifications.General.Fragrance Concentration',
+  ],
   'myntra.com': ['product_results.brand', 'selectedSeller.netQuantity', 'main.title'],
 };
 export type CanonicalValidationFailure = {
@@ -99,7 +113,7 @@ const diagnosticPaths = new Set([
   ...[
     'brand',
     'line',
-    ...['volume', 'pack', 'concentration', 'formulation', 'edition'].map(
+    ...['volume', 'pack', 'concentration', 'formulation', 'edition', 'packageGtin'].map(
       (key) => `selected.${key}`,
     ),
   ].flatMap((path) => [
@@ -211,8 +225,10 @@ export function readCanonicalIdentity(
         ? f.field === 'listing.title'
         : f.field === 'main.title' ||
           (slot !== 'edition' &&
-            e.source.store === 'amazon' &&
-            f.field === 'product_information.Fragrance Concentration');
+            ((e.source.store === 'amazon' &&
+              f.field === 'product_information.Fragrance Concentration') ||
+              (e.source.store === 'flipkart' &&
+                f.field === 'specifications.General.Fragrance Concentration')));
     if (!fieldAllowed)
       return reject('descriptor-field-invalid', `selected.${slot}.field`);
     if (f.scope !== (e.source.kind === 'search' ? 'listing' : 'main'))
@@ -257,9 +273,13 @@ export function readCanonicalIdentity(
     return reject('volume-value-invalid', 'selected.volume.value');
   if (e.selected.pack) {
     const pack = e.selected.pack;
-    if (e.source.store !== 'amazon')
+    if (!['amazon', 'flipkart'].includes(e.source.store))
       return reject('pack-store-unsupported', 'source.store');
-    if (pack.field !== 'product_information.Number of Items')
+    const fields =
+      e.source.store === 'amazon'
+        ? ['product_information.Number of Items']
+        : ['specifications.General.Number of Items', 'specifications.General.Pack Size'];
+    if (!fields.includes(pack.field))
       return reject('pack-field-invalid', 'selected.pack.field');
     if (pack.scope !== 'selected')
       return reject('pack-scope-invalid', 'selected.pack.scope');
@@ -269,6 +289,19 @@ export function readCanonicalIdentity(
       Number(pack.value) > 1000
     )
       return reject('pack-value-invalid', 'selected.pack.value');
+  }
+  if (e.selected.packageGtin) {
+    const id = e.selected.packageGtin;
+    const prefix =
+      e.source.store === 'amazon' ? 'product_information.' : 'specifications.General.';
+    if (e.source.kind !== 'product' || !['amazon', 'flipkart'].includes(e.source.store))
+      return reject('package-identifier-source-invalid', 'selected.packageGtin');
+    if (!['GTIN', 'EAN', 'UPC'].some((field) => id.field === prefix + field))
+      return reject('package-identifier-field-invalid', 'selected.packageGtin.field');
+    if (id.scope !== 'selected')
+      return reject('package-identifier-scope-invalid', 'selected.packageGtin.scope');
+    if (/^0+$/.test(id.value) || normalizedGTIN(id.value) !== id.value)
+      return reject('package-identifier-value-invalid', 'selected.packageGtin.value');
   }
   // Avoid regenerating BSON null placeholders on all future persistence paths.
   // Do not mutate the stored input, invent facts or default the selected object.
@@ -288,6 +321,7 @@ function derive(
   volume: IdentityFact | undefined,
   source: CanonicalIdentity['source'] | undefined,
   declared?: string,
+  declarationField = 'product_information.Fragrance Concentration',
 ): FragranceFacts {
   const scope = source?.kind === 'search' ? 'listing' : source ? 'main' : 'legacy';
   const titleField = source?.kind === 'search' ? 'listing.title' : 'main.title';
@@ -346,9 +380,7 @@ function derive(
         concentration.length === 1
           ? fact(
               concentration[0],
-              declared && extra?.concentrations.length
-                ? 'product_information.Fragrance Concentration'
-                : titleField,
+              declared && extra?.concentrations.length ? declarationField : titleField,
               scope,
             )
           : undefined,
@@ -356,9 +388,7 @@ function derive(
         formulation.length === 1
           ? fact(
               formulation[0],
-              declared && extra?.formulations.length
-                ? 'product_information.Fragrance Concentration'
-                : titleField,
+              declared && extra?.formulations.length ? declarationField : titleField,
               scope,
             )
           : undefined,
@@ -376,7 +406,11 @@ export function mainFragranceIdentity(input: {
   selectedVolume?: number;
   volumeField: string;
   declaration?: string;
+  declarationField?: string;
   pack?: unknown;
+  packField?: string;
+  /** Explicit GTIN/EAN/UPC from the adapter's validated MAIN field extractor. */
+  packageGtin?: { value: string; field: string };
 }) {
   if (
     !input.brand ||
@@ -403,6 +437,7 @@ export function mainFragranceIdentity(input: {
             : 'seller-sku',
     },
     input.declaration,
+    input.declarationField,
   );
   if (input.pack !== undefined) {
     const value =
@@ -414,10 +449,15 @@ export function mainFragranceIdentity(input: {
     if (Number.isSafeInteger(value) && value > 0 && value <= 1000)
       e.selected.pack = fact(
         String(value),
-        'product_information.Number of Items',
+        input.packField ?? 'product_information.Number of Items',
         'selected',
       );
     else e.issues.push('pack-unconfirmed');
+  }
+  if (input.packageGtin) {
+    const value = normalizedGTIN(input.packageGtin.value);
+    if (!value || /^0+$/.test(value)) e.issues.push('package-identifier-invalid');
+    else e.selected.packageGtin = fact(value, input.packageGtin.field, 'selected');
   }
   return readCanonicalIdentity(e) ?? null;
 }
@@ -519,6 +559,12 @@ export const fragranceProfile: CategoryProfile<FragranceFacts> = {
     if (a.brand.value !== b.brand.value) return result('mismatch', 'brand-conflict');
     if (a.line && b.line && a.line.value !== b.line.value)
       return result('mismatch', 'scent-conflict');
+    if (
+      a.selected.packageGtin &&
+      b.selected.packageGtin &&
+      a.selected.packageGtin.value !== b.selected.packageGtin.value
+    )
+      return result('mismatch', 'package-identifier-conflict');
     let unconfirmed: string | undefined;
     for (const key of [
       'volume',
@@ -550,7 +596,28 @@ export const fragranceProfile: CategoryProfile<FragranceFacts> = {
       )
     )
       return result('mismatch', 'negated-declaration');
-    if (unconfirmed) return result('insufficient', unconfirmed);
+    let independentPackage = false;
+    if (unconfirmed) {
+      // Same selected trade-item identifier can compensate for UNKNOWN optional
+      // facts. It cannot rescue catalog/listing identity, missing volume, risk
+      // markers, or a known multipack on one side of an unknown pack count.
+      independentPackage = Boolean(
+        a.source?.kind === 'product' &&
+        b.source?.kind === 'product' &&
+        a.selected.packageGtin &&
+        b.selected.packageGtin &&
+        a.selected.packageGtin.value === b.selected.packageGtin.value &&
+        a.selected.volume?.scope === 'selected' &&
+        b.selected.volume?.scope === 'selected' &&
+        a.selected.volume.value === b.selected.volume.value &&
+        a.line &&
+        b.line &&
+        !a.issues.length &&
+        !b.issues.length &&
+        [a.selected.pack, b.selected.pack].every((pack) => !pack || pack.value === '1'),
+      );
+      if (!independentPackage) return result('insufficient', unconfirmed);
+    }
     if (
       (a.negated.length || b.negated.length) &&
       !a.selected.concentration &&
@@ -559,6 +626,7 @@ export const fragranceProfile: CategoryProfile<FragranceFacts> = {
       return result('insufficient', 'negated-selection-unconfirmed');
     if (a.issues.length || b.issues.length)
       return result('insufficient', a.issues[0] ?? b.issues[0]);
+    if (independentPackage) return result('verified', 'independent-package-evidence');
     return a.line && b.line && a.selected.volume && b.selected.volume
       ? result('verified', 'independent-category-evidence')
       : result('insufficient', 'selected-evidence-missing');

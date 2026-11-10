@@ -157,6 +157,8 @@ function gtin(value: string) {
     .reduce((sum, c, i) => sum + Number(c) * (i % 2 ? 3 : 1), 0);
   return total % 10 === 0 ? digits.padStart(14, '0') : undefined;
 }
+// Shared checksum/normalization; an MPN or retailer ID is never promoted to GTIN.
+export { gtin as normalizedGTIN };
 type Attribute = keyof ExactEvidence['selected'];
 export function sufficientExactEvidence(value: unknown) {
   const e = readExactEvidence(value);

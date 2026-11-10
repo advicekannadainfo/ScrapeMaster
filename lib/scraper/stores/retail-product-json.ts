@@ -172,6 +172,7 @@ export function parseAmazonAPIProduct(body: string, input: string): ScrapedProdu
     url: target.url,
     selectedVolume: selectedVolumeEvidence.volume,
     volumeField: selectedVolumeEvidence.field ?? 'product_information.Item Volume',
+    packageGtin: exactEvidence?.gtin,
     pack: (raw as { product_information: Record<string, unknown> }).product_information[
       'Number of Items'
     ],
@@ -651,6 +652,11 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
       url: target.url,
       selectedVolume: selectedVolumeEvidence.volume,
       volumeField: selectedVolumeEvidence.field ?? 'specifications.General.Quantity',
+      packageGtin: exactEvidence?.gtin,
+      pack: exactEvidence?.selected.pack?.value,
+      packField: exactEvidence?.selected.pack?.field,
+      declaration: exactEvidence?.selected.concentration?.value,
+      declarationField: exactEvidence?.selected.concentration?.field,
     });
     return {
       canonicalIdentity,

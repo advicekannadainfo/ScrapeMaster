@@ -29,6 +29,8 @@ export const identityKey = (e: CanonicalIdentity) =>
     ),
     e.negated,
     e.issues,
+    // Preserve old observation keys byte-for-byte when the new proof is absent.
+    ...(e.selected.packageGtin ? ['package-gtin', e.selected.packageGtin.value] : []),
   ]);
 export function observeProduct(
   identity: unknown,

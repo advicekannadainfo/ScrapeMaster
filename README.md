@@ -107,6 +107,18 @@ The existing ten-minute Compare cooldown, manual-link budget, and B1/B3 price
 gates remain in force. API request counts are limits, not provider credit counts.
 No environment setting is enabled by adding this code.
 
+Fragrance optional-field policy: absent metadata stays unknown. Matching
+checksum-valid GTIN/EAN/UPC from both validated, selected main Product responses
+can corroborate missing optional pack/concentration/formulation/edition fields,
+provided brand, scent, independently selected volume and all explicit facts agree.
+This exception requires fresh bound source/candidate prices before display and
+never rescues a known multipack against an unknown count, contradictory variants,
+bundles, refills, testers, or Search-only evidence. Retailer IDs, MPN/Model Number
+digits, titles and generic concentration labels are not promoted to package GTIN.
+"Perfume Oil" is not normalized to "Parfum"; unknown formulation stays unknown.
+Existing records without this proof retain their previous conservative policy;
+there is no backfill or automatic provider call to obtain identifiers.
+
 `POST /api/preview/fragrance-dry-run` is an isolated diagnostic, never called by
 the normal UI. It requires `VERCEL_ENV=preview` and Bearer `CRON_SECRET`, and
 rejects a globally enabled hydration flag. Its strict JSON body accepts

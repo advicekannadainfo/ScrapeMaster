@@ -29,6 +29,7 @@ export const identitySchema = z.object({
     concentration: optionalFact,
     formulation: optionalFact,
     edition: optionalFact,
+    packageGtin: optionalFact,
   }),
   negated: z.array(z.string().max(30)).max(8),
   issues: z
@@ -41,6 +42,7 @@ export const identitySchema = z.object({
         'concentration-ambiguous',
         'declaration-conflict',
         'brand-conflict',
+        'package-identifier-invalid',
       ]),
     )
     .max(7),

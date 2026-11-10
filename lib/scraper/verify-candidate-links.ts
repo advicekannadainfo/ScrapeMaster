@@ -31,6 +31,8 @@ const REJECTION_REASONS = [
   'missing-selected-size',
   'missing-product-evidence',
   'identity-mismatch',
+  'package-identifier-conflict',
+  'package-identifier-invalid',
   'formulation-conflict',
   'formulation-unconfirmed',
   'concentration-conflict',
