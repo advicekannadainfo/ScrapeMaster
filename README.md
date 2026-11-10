@@ -144,7 +144,7 @@ Do not invoke this endpoint without separate approval for the paid dry run.
 2. Keep `MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION` unset/`false`. After separate
    approval, set `MERIDEALS_PREVIEW_TRACKING_TEST=true` on the isolated Preview
    only. This default-OFF website test mode allows the approved Old Money
-   Flipkart URL/short alias and the exact Hustler 90ml URL in
+   Flipkart URL/short alias and the exact Love Drunk 100ml URL in
    `lib/preview-website-test-target.ts`, retaining its PID, listing selector and
    marketplace. The protected diagnostic still accepts **Old Money only**.
    Unapproved tracking URLs fail

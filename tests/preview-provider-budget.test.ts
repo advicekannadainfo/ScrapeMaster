@@ -21,7 +21,7 @@ import {
   fetchHtml,
 } from '@/lib/scraper/http';
 import { DRY_RUN_URL } from '@/lib/preview-fragrance-dry-run';
-import { HUSTLER_PREVIEW_TEST_URL } from '@/lib/preview-website-test-target';
+import { LOVE_DRUNK_100ML_PREVIEW_TEST_URL } from '@/lib/preview-website-test-target';
 beforeEach(() => {
   vi.stubEnv('VERCEL_ENV', 'preview');
   vi.stubEnv('SCRAPINGDOG_API_KEY', 'offline-only');
@@ -34,7 +34,7 @@ describe('Preview website budget shared across explicitly deferred lifecycle pha
     vi.stubEnv('MERIDEALS_PREVIEW_TRACKING_TEST', 'true');
     vi.stubEnv('MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION', 'false');
   });
-  it.each([DRY_RUN_URL, HUSTLER_PREVIEW_TEST_URL])(
+  it.each([DRY_RUN_URL, LOVE_DRUNK_100ML_PREVIEW_TEST_URL])(
     're-enters the same budget after tracking scope has exited and caps all five HTTP attempts %#',
     async (sourceURL) => {
       const flow = createPreviewTrackingBudget();

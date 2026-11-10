@@ -34,7 +34,7 @@ vi.mock('@/lib/models/product.model', () => ({
 }));
 import { scrapeAndStoreProduct } from '@/lib/actions';
 import { DRY_RUN_URL, DRY_RUN_INPUT_URL } from '@/lib/preview-fragrance-dry-run';
-import { HUSTLER_PREVIEW_TEST_URL } from '@/lib/preview-website-test-target';
+import { LOVE_DRUNK_100ML_PREVIEW_TEST_URL } from '@/lib/preview-website-test-target';
 import { HealthRegistry, setHealthRegistry } from '@/lib/scraper/health';
 import { createFragranceHydrator } from '@/lib/scraper/hydrate-fragrance';
 import { previewBudgetActive } from '@/lib/scraper/preview-provider-budget';
@@ -269,38 +269,89 @@ describe('real Track action -> real tracking/offer services -> deferred after ->
     expect(mocks.get.mock.calls[0][0]).toMatch(/amazon\/product$/);
     expect(mocks.after).toHaveBeenCalledTimes(1);
   });
-  it('tracks exact Hustler 90ml selectors through the real action, with bounded deferred comparison and no fabricated proof', async () => {
-    // Synthetic 90ml MAIN Product transformation; not a captured Hustler response.
+  it('tracks exact Love Drunk 100ml selectors, preserves pack rejection and caps deferred comparison at five attempts', async () => {
+    // Synthetic 100ml transformations, NOT captured live Love Drunk 100ml
+    // Flipkart/Amazon responses. Myntra's supplied captured fixture is 100ml.
+    const selectedTitle = 'BLA BLI BLU Love Drunk Perfume 100ml';
     const p = sourceBody();
-    p.product_results.title = 'BLA BLI BLU Hustler Perfume 90ml';
-    p.product_results.sku = 'PERHQ4H22Z4SRTGU';
-    p.product_results.specifications.General['Model Name'] = 'Hustler Perfume';
-    p.product_results.specifications.General.Quantity = '90 ml';
-    p.product_results.specifications.General['Net Quantity'] = '90 ml';
-    p.product_results.specifications['Product Highlights'].Quantity = '90 ml';
-    p.product_results.highlights = ['Quantity: 90 ml'];
-    mocks.get.mockImplementation(async (endpoint: string) => ({
-      data: JSON.stringify(
-        endpoint.endsWith('/flipkart/product') ? p : response(endpoint),
-      ),
-    }));
-    expect(await scrapeAndStoreProduct(HUSTLER_PREVIEW_TEST_URL)).toEqual({
+    p.product_results.title = selectedTitle;
+    p.product_results.sku = 'PERHEV7YFJMY2UWG';
+    p.product_results.price = '₹650';
+    p.product_results.previous_price = '₹1000';
+    p.product_results.specifications.General['Model Name'] = 'Love Drunk Perfume';
+    p.product_results.specifications.General.Quantity = '100 ml';
+    p.product_results.specifications.General['Net Quantity'] = '100 ml';
+    p.product_results.specifications['Product Highlights'].Quantity = '100 ml';
+    p.product_results.highlights = ['Quantity: 100 ml'];
+    mocks.get.mockImplementation(async (endpoint: string) => {
+      let body: unknown;
+      if (endpoint.endsWith('/flipkart/product')) body = p;
+      else if (endpoint.endsWith('/amazon/search'))
+        body = {
+          results: [
+            {
+              type: 'search_product',
+              title: selectedTitle,
+              asin: 'B0FYGRL51R',
+              optimized_url: 'https://www.amazon.in/dp/B0FYGRL51R',
+              extracted_price: 650,
+              currency: '₹',
+              sponsored: false,
+            },
+          ],
+        };
+      else if (endpoint.endsWith('/amazon/product')) {
+        const a = structuredClone(amazonProduct);
+        a.title = selectedTitle;
+        a.main_title = selectedTitle;
+        a.product_information['Model Name'] = selectedTitle;
+        a.product_information['Item Volume'] = '100 Millilitres';
+        a.product_information['Package Size Name'] = '100ml';
+        a.product_information['Unit Count'] = '100.0 Milliliters';
+        body = a; // retain captured selected pack=1 and formulation facts
+      } else if (endpoint.endsWith('/myntra/search'))
+        body = {
+          search_results: [
+            {
+              productId: 36340100,
+              productName: selectedTitle,
+              brand: 'BLA BLI BLU',
+              price: 650,
+              mrp: 1000,
+              landingPageUrl: 'perfume/bla-bli-blu/love-drunk/36340100/buy',
+              inventoryInfo: [
+                { skuId: 116095841, label: '100ml', inventory: 10, available: true },
+              ],
+            },
+          ],
+        };
+      else body = structuredClone(myntraProduct);
+      return { data: JSON.stringify(body) };
+    });
+    expect(await scrapeAndStoreProduct(LOVE_DRUNK_100ML_PREVIEW_TEST_URL)).toEqual({
       ok: true,
       data: { id },
     });
-    expect(mocks.get.mock.calls[0][1].params.url).toBe(HUSTLER_PREVIEW_TEST_URL);
-    expect(stored.url).toBe(HUSTLER_PREVIEW_TEST_URL);
-    expect(stored.variant).toBe('90ml');
+    expect(mocks.get.mock.calls[0][1].params.url).toBe(LOVE_DRUNK_100ML_PREVIEW_TEST_URL);
+    expect(stored.url).toBe(LOVE_DRUNK_100ML_PREVIEW_TEST_URL);
+    expect(stored.variant).toBe('100ml');
     await mocks.after.mock.calls[0][0]();
-    expect(mocks.get.mock.calls.length).toBeLessThanOrEqual(5);
+    expect(mocks.get).toHaveBeenCalledTimes(5);
     expect(
       mocks.get.mock.calls.filter(([url]) => url.endsWith('/flipkart/product')),
     ).toHaveLength(1);
-    // Existing source/matching evidence rules decide eligibility; never borrow
-    // Old Money's scent/30ml Search or Product evidence to verify Hustler 90ml.
+    // An independently fetched Amazon response still cannot fill absent
+    // Flipkart selected-pack evidence or turn volume into a one-item pack.
     expect(
       mocks.get.mock.calls.filter(([url]) => /\/(amazon|myntra)\/product$/.test(url)),
-    ).toHaveLength(0);
+    ).toHaveLength(2);
+    const offers = mocks.write.mock.calls[0][1].$set.offers;
+    expect(offers.some((offer: { store: string }) => offer.store === 'amazon')).toBe(
+      false,
+    );
+    expect(offers.some((offer: { store: string }) => offer.store === 'myntra.com')).toBe(
+      true,
+    );
     const used = mocks.get.mock.calls.length;
     await mocks.after.mock.calls[0][0]();
     expect(mocks.get).toHaveBeenCalledTimes(used);
@@ -308,11 +359,14 @@ describe('real Track action -> real tracking/offer services -> deferred after ->
     expect(process.env.MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION).toBe('false');
   });
   it.each([
-    HUSTLER_PREVIEW_TEST_URL.split('&lid=')[0],
-    `${HUSTLER_PREVIEW_TEST_URL}&extra=bad`,
-    HUSTLER_PREVIEW_TEST_URL.replace('lid=LSTPERHQ4H22Z4SRTGUEGJMT8', 'lid=OTHER'),
+    LOVE_DRUNK_100ML_PREVIEW_TEST_URL.split('&lid=')[0],
+    `${LOVE_DRUNK_100ML_PREVIEW_TEST_URL}&extra=bad`,
+    LOVE_DRUNK_100ML_PREVIEW_TEST_URL.replace(
+      'lid=LSTPERHEV7YFJMY2UWG4A1W6J',
+      'lid=OTHER',
+    ),
   ])(
-    'rejects unapproved Hustler URL variants before any provider or DB operation %#',
+    'rejects unapproved Love Drunk 100ml URL variants before any provider or DB operation %#',
     async (url) => {
       expect((await scrapeAndStoreProduct(url)).ok).toBe(false);
       expect(mocks.get).not.toHaveBeenCalled();
