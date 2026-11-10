@@ -1,0 +1,29 @@
+{
+  "fixture_kind": "user-reported-partial-extract",
+  "complete_raw_response": false,
+  "reported_product_name": "Love Drunk Perfume for Men & Women",
+  "reported_listing_id": "LSTPERHEV7YFJMY2UWG4A1W6J",
+  "parser_required_fields_not_supplied": [
+    "product_results.title",
+    "product_results.main_image"
+  ],
+  "partial_response": {
+    "product_results": {
+      "sku": "PERHEV7YFJMY2UWG",
+      "brand": "BLA BLI BLU",
+      "price": "₹720",
+      "availability": "InStock",
+      "specifications": {
+        "General": {
+          "Quantity": "100 ml",
+          "Net Quantity": "100 ml",
+          "Fragrance Classification": "Perfume",
+          "Key Features": "25% perfume oil concentration., Unlike regular EDTs or EDPs, it’s a parfum."
+        },
+        "Product Highlights": { "Quantity": "100 ml" }
+      },
+      "display_sizes": [],
+      "variants": []
+    }
+  }
+}
