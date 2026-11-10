@@ -143,8 +143,11 @@ Do not invoke this endpoint without separate approval for the paid dry run.
    history and offer records, unlike the read-only diagnostic above.
 2. Keep `MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION` unset/`false`. After separate
    approval, set `MERIDEALS_PREVIEW_TRACKING_TEST=true` on the isolated Preview
-   only. This default-OFF test mode allows only the same exact approved Old Money
-   Flipkart URL/short alias used by the diagnostic. Unapproved tracking URLs fail
+   only. This default-OFF website test mode allows the approved Old Money
+   Flipkart URL/short alias and the exact Hustler 90ml URL in
+   `lib/preview-website-test-target.ts`, retaining its PID, listing selector and
+   marketplace. The protected diagnostic still accepts **Old Money only**.
+   Unapproved tracking URLs fail
    before Product/DB work. Production ignores this test flag. Keep scheduled
    refreshes, bulk jobs and email
    delivery disabled/absent on the test deployment. Do not submit an alert email.

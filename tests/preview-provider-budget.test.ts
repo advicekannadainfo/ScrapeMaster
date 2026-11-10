@@ -21,6 +21,7 @@ import {
   fetchHtml,
 } from '@/lib/scraper/http';
 import { DRY_RUN_URL } from '@/lib/preview-fragrance-dry-run';
+import { HUSTLER_PREVIEW_TEST_URL } from '@/lib/preview-website-test-target';
 beforeEach(() => {
   vi.stubEnv('VERCEL_ENV', 'preview');
   vi.stubEnv('SCRAPINGDOG_API_KEY', 'offline-only');
@@ -33,43 +34,47 @@ describe('Preview website budget shared across explicitly deferred lifecycle pha
     vi.stubEnv('MERIDEALS_PREVIEW_TRACKING_TEST', 'true');
     vi.stubEnv('MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION', 'false');
   });
-  it('re-enters the same budget after tracking scope has exited and caps all five HTTP attempts', async () => {
-    const flow = createPreviewTrackingBudget();
-    await flow.track(async () => {
-      await fetchFlipkartProductJSON(DRY_RUN_URL);
-      await expect(fetchFlipkartProductJSON(DRY_RUN_URL)).rejects.toThrow(/budget/);
-      await expect(fetchAmazonSearchJSON('too early')).rejects.toThrow(/budget/);
-    });
-    expect(previewBudgetActive()).toBe(false);
-    await expect(fetchAmazonSearchJSON('outside flow')).rejects.toThrow(/bounded/);
-    await flow.compare(async () => {
-      await Promise.all([
-        fetchAmazonSearchJSON('test perfume'),
-        fetchMyntraSearchJSON('https://www.myntra.com/test-perfume'),
-      ]);
-      await Promise.all([
-        fetchAmazonProductJSON('https://www.amazon.in/dp/B0TEST0001'),
-        fetchMyntraProductJSON('https://www.myntra.com/perfume/12345678/buy'),
-      ]);
-      await expect(fetchAmazonSearchJSON('second page')).rejects.toThrow(/budget/);
-      await expect(fetchMyntraSearchJSON('https://www.myntra.com/page2')).rejects.toThrow(
-        /budget/,
-      );
-      await expect(
-        fetchAmazonProductJSON('https://www.amazon.in/dp/B0TEST0002'),
-      ).rejects.toThrow(/budget/);
-      await expect(
-        fetchMyntraProductJSON('https://www.myntra.com/perfume/12345679/buy'),
-      ).rejects.toThrow(/budget/);
-      await expect(fetchFlipkartProductJSON(DRY_RUN_URL)).rejects.toThrow(/budget/);
-      await expect(fetchHtml(DRY_RUN_URL)).rejects.toThrow(/Generic/);
-    });
-    await expect(flow.compare(async () => {})).rejects.toThrow(/unavailable/);
-    await expect(flow.track(async () => {})).rejects.toThrow(/already/);
-    expect(flow.summary()).toMatchObject({ maximum: 5, used: 5 });
-    expect(mocks.get).toHaveBeenCalledTimes(5);
-    expect(process.env.MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION).toBe('false');
-  });
+  it.each([DRY_RUN_URL, HUSTLER_PREVIEW_TEST_URL])(
+    're-enters the same budget after tracking scope has exited and caps all five HTTP attempts %#',
+    async (sourceURL) => {
+      const flow = createPreviewTrackingBudget();
+      await flow.track(async () => {
+        await fetchFlipkartProductJSON(sourceURL);
+        await expect(fetchFlipkartProductJSON(sourceURL)).rejects.toThrow(/budget/);
+        await expect(fetchAmazonSearchJSON('too early')).rejects.toThrow(/budget/);
+      });
+      expect(previewBudgetActive()).toBe(false);
+      await expect(fetchAmazonSearchJSON('outside flow')).rejects.toThrow(/bounded/);
+      await flow.compare(async () => {
+        await Promise.all([
+          fetchAmazonSearchJSON('test perfume'),
+          fetchMyntraSearchJSON('https://www.myntra.com/test-perfume'),
+        ]);
+        await Promise.all([
+          fetchAmazonProductJSON('https://www.amazon.in/dp/B0TEST0001'),
+          fetchMyntraProductJSON('https://www.myntra.com/perfume/12345678/buy'),
+        ]);
+        await expect(fetchAmazonSearchJSON('second page')).rejects.toThrow(/budget/);
+        await expect(
+          fetchMyntraSearchJSON('https://www.myntra.com/page2'),
+        ).rejects.toThrow(/budget/);
+        await expect(
+          fetchAmazonProductJSON('https://www.amazon.in/dp/B0TEST0002'),
+        ).rejects.toThrow(/budget/);
+        await expect(
+          fetchMyntraProductJSON('https://www.myntra.com/perfume/12345679/buy'),
+        ).rejects.toThrow(/budget/);
+        await expect(fetchFlipkartProductJSON(DRY_RUN_URL)).rejects.toThrow(/budget/);
+        await expect(fetchHtml(DRY_RUN_URL)).rejects.toThrow(/Generic/);
+      });
+      await expect(flow.compare(async () => {})).rejects.toThrow(/unavailable/);
+      await expect(flow.track(async () => {})).rejects.toThrow(/already/);
+      expect(flow.summary()).toMatchObject({ maximum: 5, used: 5 });
+      expect(mocks.get).toHaveBeenCalledTimes(5);
+      expect(mocks.get.mock.calls[0][1].params.url).toBe(sourceURL);
+      expect(process.env.MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION).toBe('false');
+    },
+  );
   it('consumes failed source attempts and cannot start comparison or retry', async () => {
     const flow = createPreviewTrackingBudget();
     mocks.get.mockRejectedValue(new Error('PRIVATE_TOKEN'));

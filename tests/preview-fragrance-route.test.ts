@@ -14,6 +14,7 @@ vi.mock('@/lib/preview-fragrance-dry-run', async (original) => ({
 }));
 import { POST } from '@/app/api/preview/fragrance-dry-run/route';
 import { DRY_RUN_URL, DRY_RUN_INPUT_URL } from '@/lib/preview-fragrance-dry-run';
+import { HUSTLER_PREVIEW_TEST_URL } from '@/lib/preview-website-test-target';
 import { NextRequest } from 'next/server';
 const request = (
   body: unknown = { url: DRY_RUN_URL },
@@ -75,6 +76,8 @@ describe('protected Preview POST: one native projected read, no business-record 
     { url: DRY_RUN_URL, mode: 'myntra-only' },
     { url: DRY_RUN_URL, mode: 'amazon-only', maximum: 10 },
     { url: 'https://evil.example', mode: 'amazon-only' },
+    { url: HUSTLER_PREVIEW_TEST_URL },
+    { url: HUSTLER_PREVIEW_TEST_URL, mode: 'amazon-only' },
   ])('rejects non-single or unapproved target %j', async (body) => {
     expect((await POST(request(body))).status).toBe(400);
     expect(mocks.Client).not.toHaveBeenCalled();

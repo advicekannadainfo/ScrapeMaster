@@ -34,6 +34,7 @@ vi.mock('@/lib/models/product.model', () => ({
 }));
 import { scrapeAndStoreProduct } from '@/lib/actions';
 import { DRY_RUN_URL, DRY_RUN_INPUT_URL } from '@/lib/preview-fragrance-dry-run';
+import { HUSTLER_PREVIEW_TEST_URL } from '@/lib/preview-website-test-target';
 import { HealthRegistry, setHealthRegistry } from '@/lib/scraper/health';
 import { createFragranceHydrator } from '@/lib/scraper/hydrate-fragrance';
 import { previewBudgetActive } from '@/lib/scraper/preview-provider-budget';
@@ -268,4 +269,56 @@ describe('real Track action -> real tracking/offer services -> deferred after ->
     expect(mocks.get.mock.calls[0][0]).toMatch(/amazon\/product$/);
     expect(mocks.after).toHaveBeenCalledTimes(1);
   });
+  it('tracks exact Hustler 90ml selectors through the real action, with bounded deferred comparison and no fabricated proof', async () => {
+    // Synthetic 90ml MAIN Product transformation; not a captured Hustler response.
+    const p = sourceBody();
+    p.product_results.title = 'BLA BLI BLU Hustler Perfume 90ml';
+    p.product_results.sku = 'PERHQ4H22Z4SRTGU';
+    p.product_results.specifications.General['Model Name'] = 'Hustler Perfume';
+    p.product_results.specifications.General.Quantity = '90 ml';
+    p.product_results.specifications.General['Net Quantity'] = '90 ml';
+    p.product_results.specifications['Product Highlights'].Quantity = '90 ml';
+    p.product_results.highlights = ['Quantity: 90 ml'];
+    mocks.get.mockImplementation(async (endpoint: string) => ({
+      data: JSON.stringify(
+        endpoint.endsWith('/flipkart/product') ? p : response(endpoint),
+      ),
+    }));
+    expect(await scrapeAndStoreProduct(HUSTLER_PREVIEW_TEST_URL)).toEqual({
+      ok: true,
+      data: { id },
+    });
+    expect(mocks.get.mock.calls[0][1].params.url).toBe(HUSTLER_PREVIEW_TEST_URL);
+    expect(stored.url).toBe(HUSTLER_PREVIEW_TEST_URL);
+    expect(stored.variant).toBe('90ml');
+    await mocks.after.mock.calls[0][0]();
+    expect(mocks.get.mock.calls.length).toBeLessThanOrEqual(5);
+    expect(
+      mocks.get.mock.calls.filter(([url]) => url.endsWith('/flipkart/product')),
+    ).toHaveLength(1);
+    // Existing source/matching evidence rules decide eligibility; never borrow
+    // Old Money's scent/30ml Search or Product evidence to verify Hustler 90ml.
+    expect(
+      mocks.get.mock.calls.filter(([url]) => /\/(amazon|myntra)\/product$/.test(url)),
+    ).toHaveLength(0);
+    const used = mocks.get.mock.calls.length;
+    await mocks.after.mock.calls[0][0]();
+    expect(mocks.get).toHaveBeenCalledTimes(used);
+    expect(mocks.email).not.toHaveBeenCalled();
+    expect(process.env.MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION).toBe('false');
+  });
+  it.each([
+    HUSTLER_PREVIEW_TEST_URL.split('&lid=')[0],
+    `${HUSTLER_PREVIEW_TEST_URL}&extra=bad`,
+    HUSTLER_PREVIEW_TEST_URL.replace('lid=LSTPERHQ4H22Z4SRTGUEGJMT8', 'lid=OTHER'),
+  ])(
+    'rejects unapproved Hustler URL variants before any provider or DB operation %#',
+    async (url) => {
+      expect((await scrapeAndStoreProduct(url)).ok).toBe(false);
+      expect(mocks.get).not.toHaveBeenCalled();
+      expect(mocks.connect).not.toHaveBeenCalled();
+      expect(mocks.upsert).not.toHaveBeenCalled();
+      expect(mocks.after).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -12,7 +12,7 @@ import { refreshProduct } from '@/lib/services/refresh';
 import { findTrackedId, trackProduct } from '@/lib/services/track';
 import { isValidProductURL } from '@/lib/utils';
 import type { ActionResult } from '@/types';
-import { parseDryRunRequest } from '@/lib/preview-fragrance-dry-run';
+import { previewWebsiteTestTarget } from '@/lib/preview-website-test-target';
 import {
   createPreviewTrackingBudget,
   previewWebsiteTestEnabled,
@@ -33,12 +33,12 @@ export async function scrapeAndStoreProduct(
 
   try {
     const bounded = previewWebsiteTestEnabled();
-    const approved = bounded ? parseDryRunRequest({ url: parsed.data }) : undefined;
+    const approved = bounded ? previewWebsiteTestTarget(parsed.data) : undefined;
     if (bounded && !approved)
       return { ok: false, error: 'Only the approved Preview test URL is allowed.' };
     const budget = bounded ? createPreviewTrackingBudget() : undefined;
     const { id } = budget
-      ? await budget.track(() => trackProduct(approved!.url))
+      ? await budget.track(() => trackProduct(approved!))
       : await trackProduct(parsed.data);
     // Compare other stores after responding so tracking stays fast.
     after(async () => {
