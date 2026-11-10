@@ -12,6 +12,11 @@ import { refreshProduct } from '@/lib/services/refresh';
 import { findTrackedId, trackProduct } from '@/lib/services/track';
 import { isValidProductURL } from '@/lib/utils';
 import type { ActionResult } from '@/types';
+import { parseDryRunRequest } from '@/lib/preview-fragrance-dry-run';
+import {
+  createPreviewTrackingBudget,
+  previewWebsiteTestEnabled,
+} from '@/lib/scraper/preview-provider-budget';
 
 const urlSchema = z
   .string()
@@ -27,11 +32,29 @@ export async function scrapeAndStoreProduct(
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
 
   try {
-    const { id } = await trackProduct(parsed.data);
+    const bounded = previewWebsiteTestEnabled();
+    const approved = bounded ? parseDryRunRequest({ url: parsed.data }) : undefined;
+    if (bounded && !approved)
+      return { ok: false, error: 'Only the approved Preview test URL is allowed.' };
+    const budget = bounded ? createPreviewTrackingBudget() : undefined;
+    const { id } = budget
+      ? await budget.track(() => trackProduct(approved!.url))
+      : await trackProduct(parsed.data);
     // Compare other stores after responding so tracking stays fast.
-    after(() =>
-      updateOffers(id).catch((error) => console.error('[actions] offers failed', error)),
-    );
+    after(async () => {
+      if (budget) {
+        try {
+          await budget.compare(() => updateOffers(id));
+        } catch {
+          console.warn('[preview-tracking] Comparison unavailable');
+        } finally {
+          console.info('[preview-tracking] Provider attempts', budget.summary());
+        }
+      } else
+        await updateOffers(id).catch((error) =>
+          console.error('[actions] offers failed', error),
+        );
+    });
 
     revalidatePath('/');
     revalidatePath(`/products/${id}`);

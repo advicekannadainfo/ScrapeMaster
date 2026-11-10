@@ -141,25 +141,35 @@ Do not invoke this endpoint without separate approval for the paid dry run.
    Verify the database name/access scope privately before any UI action. Do not
    copy customer records or alter Production settings. The website writes product,
    history and offer records, unlike the read-only diagnostic above.
-2. Keep global hydration unset/`false` for the diagnostic. A real automatic
-   Search-to-Product website test requires **separate approval** to temporarily set
-   `MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION=true` on the isolated Preview only;
-   this task does not enable it. Keep scheduled refreshes, bulk jobs and email
+2. Keep `MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION` unset/`false`. After separate
+   approval, set `MERIDEALS_PREVIEW_TRACKING_TEST=true` on the isolated Preview
+   only. This default-OFF test mode allows only the same exact approved Old Money
+   Flipkart URL/short alias used by the diagnostic. Unapproved tracking URLs fail
+   before Product/DB work. Production ignores this test flag. Keep scheduled
+   refreshes, bulk jobs and email
    delivery disabled/absent on the test deployment. Do not submit an alert email.
 3. Approve one test URL and its paid-call budget before clicking **Track Price**
    once. Tracking already launches automatic comparison after responding: for
-   these three dedicated stores, the upper bound with hydration enabled is
+   this approved flow, a shared transport-enforced hard limit is
    **five provider attempts** (one source Product, up to two Search, up to two
-   competitor Products), fewer on cache hits or missing evidence. Each candidate
-   Product is attempted once, without paid fallback or retries. This diagnostic's
+   competitor Products), fewer when evidence/candidates are missing. The same
+   budget object is explicitly re-entered in the deferred `after()` comparison;
+   the callback cannot reset it. Each route has one slot, including failed
+   attempts. Tracking can only call Flipkart Product; comparison can only call
+   Amazon/Myntra Search/Product. Generic paid fallback, repeated Search/pages and
+   extra candidates are blocked at transport. Shared discovery/hydration pending
+   caches are neither consumed nor populated by this isolated flow. Product
+   verification is enabled only inside its comparison scope; the global flag
+   remains OFF and strict matching is unchanged. This diagnostic's
    three-attempt Amazon-only cap does **not** apply to the website.
 4. Wait for that automatic comparison and reload the product page; verify the
    source details and only independently verified, fresh competitor offers. Do
-   not immediately click **Compare Stores** again. If a separate manual Compare
-   test is approved after the existing ten-minute cooldown, budget up to four
-   additional attempts (two Search + two Products); cache hits may reduce this.
-   Missing selected-size proof remains unverified. Restore the Preview flag to
-   `false` after the approved test. No live website testing is performed here.
+   not click Track again or **Compare Stores**: the limit is per tracking flow,
+   not a deployment/account-wide allowance. Provider requests outside the bounded
+   flow are denied while Preview test mode is ON (including manual verification,
+   refresh and standalone search). Missing selected-size/pack proof remains
+   unverified. Restore `MERIDEALS_PREVIEW_TRACKING_TEST=false` after the approved
+   test. No live website testing or environment changes are performed here.
 
 For rendered product pages through ScrapingDog, set `SCRAPINGDOG_API_KEY`
 in `.env.local`, Vercel environment variables, and the GitHub Actions repository

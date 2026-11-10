@@ -18,7 +18,10 @@ import {
   safeCandidateRejectionReason,
   type CandidateRejectionReason,
 } from './verify-candidate-links';
-import { previewBudgetActive } from './preview-provider-budget';
+import {
+  previewBudgetActive,
+  previewWebsiteBudgetActive,
+} from './preview-provider-budget';
 
 export const HYDRATION_FLAG = 'MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION';
 export const MAX_HYDRATION_REQUESTS = 2;
@@ -55,7 +58,8 @@ export function createFragranceHydrator(
     options?.previewDryRun === true &&
     process.env.VERCEL_ENV === 'preview' &&
     previewBudgetActive();
-  const enabled = process.env[HYDRATION_FLAG] === 'true' || dryRun;
+  const isolated = dryRun || previewWebsiteBudgetActive();
+  const enabled = process.env[HYDRATION_FLAG] === 'true' || isolated;
   const storesUsed = new Set<string>();
   let requests = 0;
   return {
@@ -169,7 +173,7 @@ export function createFragranceHydrator(
         store,
         target,
       ]);
-      let entry = dryRun ? undefined : cache.get(key);
+      let entry = isolated ? undefined : cache.get(key);
       if (entry && entry.until > Date.now()) diagnostic.cacheHit = true;
       else {
         if (requests >= MAX_HYDRATION_REQUESTS) return done('budget-exhausted');
@@ -194,7 +198,7 @@ export function createFragranceHydrator(
               ],
             };
           });
-        if (!dryRun) {
+        if (!isolated) {
           cache.set(key, current);
           if (cache.size > 200) cache.delete(cache.keys().next().value!);
         }

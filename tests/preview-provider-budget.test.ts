@@ -9,6 +9,8 @@ vi.mock('@/lib/scraper/throttle', () => ({ throttle: vi.fn() }));
 import {
   withPreviewProviderBudget,
   reservePreviewProviderRequest,
+  createPreviewTrackingBudget,
+  previewBudgetActive,
 } from '@/lib/scraper/preview-provider-budget';
 import {
   fetchAmazonProductJSON,
@@ -22,8 +24,74 @@ import { DRY_RUN_URL } from '@/lib/preview-fragrance-dry-run';
 beforeEach(() => {
   vi.stubEnv('VERCEL_ENV', 'preview');
   vi.stubEnv('SCRAPINGDOG_API_KEY', 'offline-only');
+  vi.stubEnv('MERIDEALS_PREVIEW_TRACKING_TEST', 'false');
   mocks.get.mockReset();
   mocks.get.mockResolvedValue({ data: '{}' });
+});
+describe('Preview website budget shared across explicitly deferred lifecycle phases', () => {
+  beforeEach(() => {
+    vi.stubEnv('MERIDEALS_PREVIEW_TRACKING_TEST', 'true');
+    vi.stubEnv('MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION', 'false');
+  });
+  it('re-enters the same budget after tracking scope has exited and caps all five HTTP attempts', async () => {
+    const flow = createPreviewTrackingBudget();
+    await flow.track(async () => {
+      await fetchFlipkartProductJSON(DRY_RUN_URL);
+      await expect(fetchFlipkartProductJSON(DRY_RUN_URL)).rejects.toThrow(/budget/);
+      await expect(fetchAmazonSearchJSON('too early')).rejects.toThrow(/budget/);
+    });
+    expect(previewBudgetActive()).toBe(false);
+    await expect(fetchAmazonSearchJSON('outside flow')).rejects.toThrow(/bounded/);
+    await flow.compare(async () => {
+      await Promise.all([
+        fetchAmazonSearchJSON('test perfume'),
+        fetchMyntraSearchJSON('https://www.myntra.com/test-perfume'),
+      ]);
+      await Promise.all([
+        fetchAmazonProductJSON('https://www.amazon.in/dp/B0TEST0001'),
+        fetchMyntraProductJSON('https://www.myntra.com/perfume/12345678/buy'),
+      ]);
+      await expect(fetchAmazonSearchJSON('second page')).rejects.toThrow(/budget/);
+      await expect(fetchMyntraSearchJSON('https://www.myntra.com/page2')).rejects.toThrow(
+        /budget/,
+      );
+      await expect(
+        fetchAmazonProductJSON('https://www.amazon.in/dp/B0TEST0002'),
+      ).rejects.toThrow(/budget/);
+      await expect(
+        fetchMyntraProductJSON('https://www.myntra.com/perfume/12345679/buy'),
+      ).rejects.toThrow(/budget/);
+      await expect(fetchFlipkartProductJSON(DRY_RUN_URL)).rejects.toThrow(/budget/);
+      await expect(fetchHtml(DRY_RUN_URL)).rejects.toThrow(/Generic/);
+    });
+    await expect(flow.compare(async () => {})).rejects.toThrow(/unavailable/);
+    await expect(flow.track(async () => {})).rejects.toThrow(/already/);
+    expect(flow.summary()).toMatchObject({ maximum: 5, used: 5 });
+    expect(mocks.get).toHaveBeenCalledTimes(5);
+    expect(process.env.MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION).toBe('false');
+  });
+  it('consumes failed source attempts and cannot start comparison or retry', async () => {
+    const flow = createPreviewTrackingBudget();
+    mocks.get.mockRejectedValue(new Error('PRIVATE_TOKEN'));
+    await expect(flow.track(() => fetchFlipkartProductJSON(DRY_RUN_URL))).rejects.toThrow(
+      /failed/,
+    );
+    await expect(flow.track(() => fetchFlipkartProductJSON(DRY_RUN_URL))).rejects.toThrow(
+      /already/,
+    );
+    await expect(flow.compare(async () => {})).rejects.toThrow(/unavailable/);
+    expect(flow.summary().used).toBe(1);
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+  });
+  it('fails closed with global hydration enabled and cannot create a website scope in Production', async () => {
+    vi.stubEnv('MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION', 'true');
+    expect(() => createPreviewTrackingBudget()).toThrow(/unavailable/);
+    vi.stubEnv('MERIDEALS_FRAGRANCE_PRODUCT_VERIFICATION', 'false');
+    vi.stubEnv('VERCEL_ENV', 'production');
+    expect(() => createPreviewTrackingBudget()).toThrow(/unavailable/);
+    await fetchAmazonSearchJSON('normal production transport');
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+  });
 });
 afterEach(() => vi.unstubAllEnvs());
 describe('actual dedicated transport boundary hard cap; axios/DNS/robots ALL mocked', () => {

@@ -3,6 +3,7 @@ import type { Offer } from '@/types';
 import type { Region, StoreAdapter } from './stores/types';
 import { loadAndParse } from './load';
 import { dedicatedFirst } from './provider-routes';
+import { previewWebsiteBudgetActive } from './preview-provider-budget';
 
 export const DISCOVERY_TTL_MS = 10 * 60_000;
 export const DISCOVERY_FAILURE_COOLDOWN_MS = 60_000;
@@ -35,7 +36,8 @@ export function discoverOffers(
   if (!search || !search.regions.includes(region) || search.enabled?.() === false)
     return Promise.resolve([]);
   const key = `${adapter.id}:${region}:${query.trim().toLowerCase()}:${policy.allowFallback}:${policy.maxPaidRequests}`;
-  const hit = cache.get(key);
+  const isolated = previewWebsiteBudgetActive();
+  const hit = isolated ? undefined : cache.get(key);
   const observed = (
     entry: { pending: Promise<Offer[]>; parsedCandidates: number },
     cacheHit: boolean,
@@ -90,8 +92,10 @@ export function discoverOffers(
       entry.until = Date.now() + DISCOVERY_FAILURE_COOLDOWN_MS;
       throw error;
     });
-  cache.set(key, entry);
-  if (cache.size > 200) cache.delete(cache.keys().next().value!);
+  if (!isolated) {
+    cache.set(key, entry);
+    if (cache.size > 200) cache.delete(cache.keys().next().value!);
+  }
   // Every caller receives its own array so cached candidates cannot be overwritten.
   return observed(entry, false);
 }
