@@ -119,6 +119,20 @@ digits, titles and generic concentration labels are not promoted to package GTIN
 Existing records without this proof retain their previous conservative policy;
 there is no backfill or automatic provider call to obtain identifiers.
 
+Normal Compare Stores can additionally show **High-confidence match** rows from
+independently fetched Product results with matching brand/scent/selected volume,
+confirmed stock and separately bound prices no older than ten minutes. These
+live in `highConfidenceOffers`, never strict `offers` or product associations.
+Strict Best Price, buy recommendations and price alerts exclude them. Rendering
+rechecks evidence and freshness; a saved label alone is not proof. Unknown pack
+counts stay unknown; any known count above one or explicit risk/conflict rejects.
+An Amazon concentration-field "Perfume Oil" label can remain ambiguous (not an
+oil-only formulation assertion) with MAIN Liquid/Parfum context and no oil-only
+risk. One-sided formulation uncertainty needs the other Product's independent
+parfum-strength text; the words "Perfume Oil" and "Parfum" are never equated.
+The strict matcher and Old Money diagnostic remain strict. No hydration flag is
+enabled, API budget increased or existing records backfilled by this feature.
+
 `POST /api/preview/fragrance-dry-run` is an isolated diagnostic, never called by
 the normal UI. It requires `VERCEL_ENV=preview` and Bearer `CRON_SECRET`, and
 rejects a globally enabled hydration flag. Its strict JSON body accepts

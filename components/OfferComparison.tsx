@@ -8,10 +8,16 @@ import { cn } from '@/lib/utils';
 import { verifiedOffers } from '@/lib/verified-offers';
 import { EXACT_OFFERS_UNVERIFIED } from '@/lib/product-presentation';
 import { categoryFor } from '@/lib/scraper/product-identity';
+import { highConfidenceOffers } from '@/lib/high-confidence-offers';
 
 export default function OfferComparison({ product }: { product: Product }) {
-  const offers = verifiedOffers(product);
-  const best = offers[0];
+  const strict = verifiedOffers(product);
+  const additional = highConfidenceOffers(
+    product,
+    product.highConfidenceOffers ?? [],
+  ).filter((o) => !strict.some((s) => s.store === o.store));
+  const offers = [...strict, ...additional].sort((a, b) => a.price - b.price);
+  const best = strict[0];
   // Every listing at the minimum price is a lowest price, not just the first.
   const lowest = best?.price;
   const savings =
@@ -22,7 +28,7 @@ export default function OfferComparison({ product }: { product: Product }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="offers-heading" className="flex items-center gap-2 font-semibold">
-            <Store className="size-4 text-accent" aria-hidden /> Best price across stores
+            <Store className="size-4 text-accent" aria-hidden /> Compare stores
           </h2>
           <p className="mt-1 text-xs text-muted">
             {product.comparisonIdentityVerified === false && offers.length <= 1 ? (
@@ -62,16 +68,27 @@ export default function OfferComparison({ product }: { product: Product }) {
                 rel="noopener noreferrer nofollow"
                 className={cn(
                   'flex items-center gap-3 px-3 py-3 transition hover:bg-paper sm:px-4',
-                  offer.price === lowest && 'bg-accent-soft/40',
+                  !offer.matchConfidence && offer.price === lowest && 'bg-accent-soft/40',
                 )}
               >
                 <StoreLogo url={offer.url} name={offer.storeName} />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2 text-sm font-medium">
                     {offer.storeName}
-                    {offer.price === lowest && offers.length > 1 && (
-                      <span className="inline-flex items-center gap-1 rounded bg-down px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white">
-                        <Trophy className="size-3" aria-hidden /> Lowest
+                    {!offer.matchConfidence &&
+                      offer.price === lowest &&
+                      strict.length > 1 && (
+                        <span className="inline-flex items-center gap-1 rounded bg-down px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white">
+                          <Trophy className="size-3" aria-hidden />{' '}
+                          {additional.length ? 'Lowest verified' : 'Lowest'}
+                        </span>
+                      )}
+                    {offer.matchConfidence === 'high-confidence' && (
+                      <span
+                        className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                        title="Main product and selected size match. Exact pack or formulation metadata is incomplete."
+                      >
+                        High-confidence match
                       </span>
                     )}
                   </span>

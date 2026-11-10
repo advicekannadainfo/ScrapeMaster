@@ -1,6 +1,7 @@
 import 'server-only';
 import type { Offer } from '@/types';
 import { verifiedOffers } from '@/lib/verified-offers';
+import { highConfidenceOffers } from '@/lib/high-confidence-offers';
 import {
   fragranceDecision,
   fragranceIdentity,
@@ -36,6 +37,7 @@ export type HydrationDiagnostic = {
     | 'no-candidate'
     | 'budget-exhausted'
     | 'product-verified'
+    | 'product-high-confidence'
     | 'missing-provider-proof'
     | 'product-failed'
     | 'already-verified';
@@ -52,7 +54,7 @@ const cache = new Map<string, { until: number; pending: Promise<Verification> }>
  * No retries, pagination, fallback, refresh, notifications or database access. */
 export function createFragranceHydrator(
   source: Source,
-  options?: { previewDryRun: true },
+  options?: { previewDryRun?: true; allowHighConfidence?: true },
 ) {
   const dryRun =
     options?.previewDryRun === true &&
@@ -67,7 +69,11 @@ export function createFragranceHydrator(
     async verify(
       store: string,
       listings: Offer[],
-    ): Promise<{ offer?: Offer; diagnostic: HydrationDiagnostic }> {
+    ): Promise<{
+      offer?: Offer;
+      highConfidenceOffer?: Offer;
+      diagnostic: HydrationDiagnostic;
+    }> {
       const diagnostic: HydrationDiagnostic = {
         status: 'disabled',
         searchCandidates: Math.min(listings.length, 200),
@@ -172,6 +178,7 @@ export function createFragranceHydrator(
         source.currency,
         store,
         target,
+        options?.allowHighConfidence === true,
       ]);
       let entry = isolated ? undefined : cache.get(key);
       if (entry && entry.until > Date.now()) diagnostic.cacheHit = true;
@@ -181,12 +188,20 @@ export function createFragranceHydrator(
         diagnostic.productRequests = 1;
         entry = {
           until: Infinity, // coalesce pending work; TTL starts only after it settles
-          pending: Promise.resolve().then(() => verifyCandidateLinks(source, [target])),
+          pending: Promise.resolve().then(() =>
+            options?.allowHighConfidence
+              ? verifyCandidateLinks(source, [target], { allowHighConfidence: true })
+              : verifyCandidateLinks(source, [target]),
+          ),
         };
         const current = entry;
         current.pending = current.pending
           .then((result) => {
-            current.until = Date.now() + (result.offers.length ? 10 * 60_000 : 60_000);
+            current.until =
+              Date.now() +
+              (result.offers.length || result.highConfidenceOffers?.length
+                ? 10 * 60_000
+                : 60_000);
             return result;
           })
           .catch(() => {
@@ -209,6 +224,19 @@ export function createFragranceHydrator(
         result.offers.filter((o) => o.store === store && o.url === target),
       )[0];
       if (offer) return done('product-verified', offer);
+      if (options?.allowHighConfidence) {
+        const candidate = highConfidenceOffers(
+          source,
+          (result.highConfidenceOffers ?? []).filter(
+            (o) => o.store === store && o.url === target,
+          ),
+        )[0];
+        if (candidate)
+          return {
+            highConfidenceOffer: candidate,
+            diagnostic: { ...diagnostic, status: 'product-high-confidence' },
+          };
+      }
       const rejected = result.diagnostics.find((d) => d.status !== 'verified');
       const reason =
         safeCandidateRejectionReason(rejected?.reason) ??

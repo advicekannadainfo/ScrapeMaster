@@ -59,12 +59,14 @@ export async function findOffersWithDiagnostics(
   const region = regionFromCurrency(product.currency);
   const query = fragranceDiscoveryQuery(product) ?? comparisonSearchQuery(product.title);
   const stores = searchableStores(region).filter((store) => store.id !== product.store);
-  const hydrator = createFragranceHydrator(product);
+  const hydrator = createFragranceHydrator(product, { allowHighConfidence: true });
+  const highConfidenceResults: Offer[] = [];
   const diagnostics: {
     store: string;
-    status: 'no-results' | 'rejected' | 'matched' | 'failed';
+    status: 'no-results' | 'rejected' | 'matched' | 'high-confidence' | 'failed';
     candidates: number;
     verified: number;
+    highConfidence?: number;
     reason?: string;
     hydration?: HydrationDiagnostic;
     sourceEvidence?:
@@ -236,17 +238,22 @@ export async function findOffersWithDiagnostics(
           hydration = result.diagnostic;
           if (result.offer)
             ranked.push({ offer: result.offer, score: 1, confidence: 'category-exact' });
+          if (result.highConfidenceOffer)
+            highConfidenceResults.push(result.highConfidenceOffer);
         }
       }
       diagnostics.push({
+        ...(hydration?.status === 'product-high-confidence' ? { highConfidence: 1 } : {}),
         ...(hydration ? { hydration } : {}),
         reason: !offers.length
           ? 'no-search-results'
           : ranked.length
             ? 'verified-competitor'
-            : Object.keys(rejections).length === 1
-              ? Object.keys(rejections)[0]
-              : 'mixed-rejections',
+            : hydration?.status === 'product-high-confidence'
+              ? 'high-confidence-competitor'
+              : Object.keys(rejections).length === 1
+                ? Object.keys(rejections)[0]
+                : 'mixed-rejections',
         sourceEvidence,
         sourceRecord,
         ...(categoryFor(product.title) === 'perfume' ? { candidateEvidence } : {}),
@@ -273,11 +280,19 @@ export async function findOffersWithDiagnostics(
         identityAssessment,
         identityReasons,
         profile: categoryFor(product.title) === 'perfume' ? 'fragrance-v1' : 'legacy',
-        confidence: ranked[0]?.confidence ?? 'none',
+        confidence:
+          ranked[0]?.confidence ??
+          (hydration?.status === 'product-high-confidence' ? 'high-confidence' : 'none'),
         discovery,
         rejections,
         store: adapter.id,
-        status: !offers.length ? 'no-results' : !ranked.length ? 'rejected' : 'matched',
+        status: !offers.length
+          ? 'no-results'
+          : ranked.length
+            ? 'matched'
+            : hydration?.status === 'product-high-confidence'
+              ? 'high-confidence'
+              : 'rejected',
         candidates: offers.length,
         verified: ranked.length,
       });
@@ -336,6 +351,7 @@ export async function findOffersWithDiagnostics(
     if (!byStore.has(offer.store)) byStore.set(offer.store, offer);
   return {
     offers: [...byStore.values()].sort((a, b) => a.price - b.price),
+    highConfidenceOffers: highConfidenceResults,
     diagnostics: diagnostics.sort((a, b) => a.store.localeCompare(b.store)),
   };
 }
@@ -343,8 +359,10 @@ export async function findOffersWithDiagnostics(
 /** Preserve the existing caller contract; diagnostics are opt-in and contain no secrets. */
 export async function findOffers(
   product: Parameters<typeof findOffersWithDiagnostics>[0],
+  onHighConfidence?: (offers: Offer[]) => void,
 ) {
   const result = await findOffersWithDiagnostics(product);
+  onHighConfidence?.(result.highConfidenceOffers);
   // A failed source must not turn a partial comparison into a server error.
   // updateOffers() can still merge previously verified manual offers.
   for (const diagnostic of result.diagnostics) {
@@ -362,6 +380,7 @@ export async function findOffers(
         reason: diagnostic.reason,
         candidates: diagnostic.candidates,
         verified: diagnostic.verified,
+        highConfidence: diagnostic.highConfidence ?? 0,
         sourceEvidence: diagnostic.sourceEvidence,
         sourceIndependentlyValidated: diagnostic.sourceIndependentlyValidated,
         sourceConfidence: diagnostic.sourceConfidence,

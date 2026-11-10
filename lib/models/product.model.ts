@@ -17,6 +17,7 @@ const offerSchema = new mongoose.Schema(
   {
     store: { type: String, required: true },
     storeName: { type: String, required: true },
+    matchConfidence: { type: String, enum: ['high-confidence'] },
     brand: String,
     variant: String,
     canonicalIdentity: mongoose.Schema.Types.Mixed,
@@ -62,6 +63,7 @@ const productSchema = new mongoose.Schema(
     isOutOfStock: { type: Boolean, default: false },
     users: { type: [userSchema], default: [] },
     offers: { type: [offerSchema], default: [] },
+    highConfidenceOffers: { type: [offerSchema], default: [] },
     offersCheckedAt: Date,
     candidateLinksCheckedAt: Date,
   },

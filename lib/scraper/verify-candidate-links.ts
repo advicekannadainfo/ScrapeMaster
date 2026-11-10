@@ -14,6 +14,7 @@ import { resolveStore } from './stores';
 import { categoryDecision } from './matching';
 import { readCanonicalIdentity } from './matching/fragrance';
 import { ScrapeError } from './errors';
+import { highConfidenceProductMatch } from '@/lib/high-confidence-offers';
 
 /** A deliberately small, explicit per-click budget. Never attempt arbitrary hosts. */
 const SUPPORTED = new Set(['amazon', 'flipkart', 'myntra.com']);
@@ -58,7 +59,7 @@ export function safeCandidateRejectionReason(
 }
 export type LinkResult = {
   store: string;
-  status: 'verified' | 'rejected' | 'failed';
+  status: 'verified' | 'high-confidence' | 'rejected' | 'failed';
   reason?: CandidateRejectionReason;
 };
 function identityRejectionReason(
@@ -92,9 +93,14 @@ export async function verifyCandidateLinks(
     | 'exactEvidence'
     | 'canonicalIdentity'
     | 'priceObservation'
-  >,
+  > & { url?: string; isOutOfStock?: boolean },
   links: string[],
-): Promise<{ offers: Offer[]; diagnostics: LinkResult[] }> {
+  options?: { allowHighConfidence: true },
+): Promise<{
+  offers: Offer[];
+  highConfidenceOffers?: Offer[];
+  diagnostics: LinkResult[];
+}> {
   if (links.length > MAX_CANDIDATE_LINKS)
     throw new Error('Maximum two candidate links per check');
   if (
@@ -113,7 +119,9 @@ export async function verifyCandidateLinks(
     };
   const seen = new Set<string>();
   const tasks = links.map(
-    async (input): Promise<{ offer?: Offer; result: LinkResult }> => {
+    async (
+      input,
+    ): Promise<{ offer?: Offer; highConfidenceOffer?: Offer; result: LinkResult }> => {
       let store = 'unknown';
       let productAttempted = false;
       try {
@@ -154,26 +162,39 @@ export async function verifyCandidateLinks(
           reason = 'stale-or-unbound-price';
         else if (!isPlausiblePrice(candidate.currentPrice, source.currentPrice))
           reason = 'price-anomaly';
-        if (reason || !candidate)
+        const highConfidence = Boolean(
+          reason &&
+          candidate &&
+          options?.allowHighConfidence &&
+          candidate.url === normalized &&
+          highConfidenceProductMatch(source, candidate),
+        );
+        if ((reason && !highConfidence) || !candidate)
           return { result: { store, status: 'rejected', reason } };
-        return {
-          offer: {
-            exactEvidence: candidate.exactEvidence,
-            canonicalIdentity: candidate.canonicalIdentity,
-            priceObservation: candidate.priceObservation,
-            brand: candidate.brand,
-            variant: candidate.variant,
-            store: candidate.store,
-            storeName: candidate.storeName,
-            title: candidate.title,
-            url: candidate.url,
-            price: candidate.currentPrice,
-            originalPrice: candidate.originalPrice,
-            currency: candidate.currency,
-            image: candidate.image,
-          },
-          result: { store, status: 'verified' },
+        const offer: Offer = {
+          exactEvidence: candidate.exactEvidence,
+          canonicalIdentity: candidate.canonicalIdentity,
+          priceObservation: candidate.priceObservation,
+          brand: candidate.brand,
+          variant: candidate.variant,
+          store: candidate.store,
+          storeName: candidate.storeName,
+          title: candidate.title,
+          url: candidate.url,
+          price: candidate.currentPrice,
+          originalPrice: candidate.originalPrice,
+          currency: candidate.currency,
+          image: candidate.image,
         };
+        return highConfidence
+          ? {
+              highConfidenceOffer: { ...offer, matchConfidence: 'high-confidence' },
+              result: { store, status: 'high-confidence' },
+            }
+          : {
+              offer,
+              result: { store, status: 'verified' },
+            };
       } catch (error) {
         return {
           result: {
@@ -192,6 +213,13 @@ export async function verifyCandidateLinks(
   const results = await Promise.all(tasks);
   return {
     offers: results.flatMap(({ offer }) => (offer ? [offer] : [])),
+    ...(options?.allowHighConfidence
+      ? {
+          highConfidenceOffers: results.flatMap(({ highConfidenceOffer }) =>
+            highConfidenceOffer ? [highConfidenceOffer] : [],
+          ),
+        }
+      : {}),
     diagnostics: results.map(({ result }) => result),
   };
 }

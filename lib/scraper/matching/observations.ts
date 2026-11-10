@@ -31,6 +31,9 @@ export const identityKey = (e: CanonicalIdentity) =>
     e.issues,
     // Preserve old observation keys byte-for-byte when the new proof is absent.
     ...(e.selected.packageGtin ? ['package-gtin', e.selected.packageGtin.value] : []),
+    ...(e.context
+      ? ['main-context', e.context.formulation ?? null, e.context.risk ?? null]
+      : []),
   ]);
 export function observeProduct(
   identity: unknown,
@@ -140,6 +143,7 @@ export function validAssociations(
     return [];
   return links.slice(0, 40).flatMap((link) => {
     if (!link || typeof link !== 'object') return [];
+    if (link.matchConfidence === 'high-confidence') return [];
     const e = readCanonicalIdentity(link.identity);
     if (
       !e ||

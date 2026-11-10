@@ -110,6 +110,11 @@ const diagnosticPaths = new Set([
   'negated.[]',
   'issues',
   'issues.[]',
+  'context',
+  ...['formulation', 'risk'].flatMap((key) => [
+    `context.${key}`,
+    ...['value', 'field', 'scope'].map((part) => `context.${key}.${part}`),
+  ]),
   ...[
     'brand',
     'line',
@@ -303,6 +308,62 @@ export function readCanonicalIdentity(
     if (/^0+$/.test(id.value) || normalizedGTIN(id.value) !== id.value)
       return reject('package-identifier-value-invalid', 'selected.packageGtin.value');
   }
+  if (e.context) {
+    if (e.source.kind !== 'product') return reject('context-source-invalid', 'context');
+    const f = e.context.formulation;
+    if (
+      f &&
+      (f.scope !== 'main' ||
+        !(
+          (e.source.store === 'amazon' &&
+            f.value === 'concentration-label-only' &&
+            f.field === 'product_information.Fragrance Concentration' &&
+            e.selected.formulation?.value === 'perfume-oil') ||
+          (e.source.store === 'flipkart' &&
+            f.value === 'parfum-strength' &&
+            f.field === 'specifications.General.Key Features')
+        ))
+    )
+      return reject('context-formulation-invalid', 'context.formulation');
+    const r = e.context.risk;
+    const riskFields =
+      e.source.store === 'amazon'
+        ? [
+            'main.title',
+            'product_information.Item Form',
+            'description',
+            'product_description',
+            'feature_bullets',
+            'product_information.GTIN',
+            'product_information.EAN',
+            'product_information.UPC',
+            'product_information.Model Number',
+            'product_information.Manufacturer Part Number',
+          ]
+        : e.source.store === 'flipkart'
+          ? [
+              'main.title',
+              'specifications.General.Key Features',
+              'description',
+              'highlights',
+              'specifications.General.Number of Items',
+              'specifications.General.Pack Size',
+              'specifications.General.Fragrance Concentration',
+              'specifications.General.GTIN',
+              'specifications.General.EAN',
+              'specifications.General.UPC',
+              'specifications.General.Model Number',
+              'specifications.General.Manufacturer Part Number',
+            ]
+          : [];
+    if (
+      r &&
+      (r.scope !== 'main' ||
+        !['pack-risk', 'formulation-risk', 'identity-risk'].includes(r.value) ||
+        !riskFields.includes(r.field))
+    )
+      return reject('context-risk-invalid', 'context.risk');
+  }
   // Avoid regenerating BSON null placeholders on all future persistence paths.
   // Do not mutate the stored input, invent facts or default the selected object.
   const compact = {
@@ -312,6 +373,7 @@ export function readCanonicalIdentity(
     ),
   } as CanonicalIdentity;
   if (compact.line === undefined) delete compact.line;
+  if (compact.context === undefined) delete compact.context;
   return compact;
 }
 
@@ -411,6 +473,7 @@ export function mainFragranceIdentity(input: {
   packField?: string;
   /** Explicit GTIN/EAN/UPC from the adapter's validated MAIN field extractor. */
   packageGtin?: { value: string; field: string };
+  context?: CanonicalIdentity['context'];
 }) {
   if (
     !input.brand ||
@@ -459,6 +522,7 @@ export function mainFragranceIdentity(input: {
     if (!value || /^0+$/.test(value)) e.issues.push('package-identifier-invalid');
     else e.selected.packageGtin = fact(value, input.packageGtin.field, 'selected');
   }
+  if (input.context) e.context = input.context;
   return readCanonicalIdentity(e) ?? null;
 }
 export function independentFragrance(value: unknown) {

@@ -1,6 +1,7 @@
 import { comparisonPriceStatus } from '@/lib/scraper/match';
 import 'server-only';
 import ProductModel from '@/lib/models/product.model';
+import { highConfidenceProductMatch } from '@/lib/high-confidence-offers';
 import type { Offer } from '@/types';
 import {
   independentFragrance,
@@ -25,6 +26,7 @@ export type TrackedSource = {
   isOutOfStock?: boolean;
   canonicalIdentity?: unknown;
   priceObservation?: unknown;
+  exactEvidence?: unknown;
   productLinks?: unknown;
 };
 export async function fragranceProductLinks(source: TrackedSource) {
@@ -36,7 +38,11 @@ export async function fragranceProductLinks(source: TrackedSource) {
   };
   const identity = fragranceIdentity(input);
   if (!identity || !independentFragrance(source.canonicalIdentity))
-    return { offers: [] as Offer[], links: [] as ProductAssociation[] };
+    return {
+      offers: [] as Offer[],
+      highConfidenceOffers: [] as Offer[],
+      links: [] as ProductAssociation[],
+    };
   const prior = validAssociations(input, source.productLinks);
   // Identity lookup deliberately includes stale observations. No network transport.
   const records = await ProductModel.find({
@@ -51,13 +57,14 @@ export async function fragranceProductLinks(source: TrackedSource) {
     ],
   })
     .select(
-      'title brand variant store storeName url currentPrice currency image isOutOfStock canonicalIdentity priceObservation comparisonIdentityVerified',
+      'title brand variant store storeName url currentPrice currency image isOutOfStock canonicalIdentity priceObservation comparisonIdentityVerified exactEvidence',
     )
     .sort({ 'priceObservation.observedAt': -1 })
     .limit(40)
     .lean();
   const links = new Map(prior.map((p) => [p.url, p]));
   const offers = new Map<string, Offer>();
+  const highConfidence = new Map<string, Offer>();
   let priceAnomalies = 0;
   let identityRejected = 0;
   let priceUnavailable = 0;
@@ -76,6 +83,26 @@ export async function fragranceProductLinks(source: TrackedSource) {
       !independentFragrance(e) ||
       !isVerifiedProductMatch(input, candidate)
     ) {
+      if (
+        highConfidenceProductMatch(input, candidate) &&
+        !highConfidence.has(record.store)
+      )
+        highConfidence.set(record.store, {
+          store: record.store,
+          title: record.title,
+          url: record.url,
+          currency: record.currency,
+          canonicalIdentity: record.canonicalIdentity,
+          priceObservation: record.priceObservation,
+          exactEvidence: record.exactEvidence,
+          brand: candidate.brand,
+          variant: candidate.variant,
+          image: candidate.image ?? undefined,
+          storeName: record.storeName,
+          price: record.currentPrice,
+          matchConfidence: 'high-confidence',
+          savedTrackedProduct: true,
+        });
       identityRejected++;
       links.delete(record.url);
       continue;
@@ -118,5 +145,9 @@ export async function fragranceProductLinks(source: TrackedSource) {
     identityRejected,
     priceUnavailable,
   });
-  return { links: [...links.values()].slice(0, 40), offers: [...offers.values()] };
+  return {
+    links: [...links.values()].slice(0, 40),
+    offers: [...offers.values()],
+    highConfidenceOffers: [...highConfidence.values()],
+  };
 }

@@ -38,6 +38,7 @@ export type Product = {
   users?: User[];
   watchers?: number;
   offers?: Offer[];
+  highConfidenceOffers?: Offer[];
   offersCheckedAt?: string;
   candidateLinksCheckedAt?: string;
   createdAt?: string;
@@ -54,6 +55,7 @@ export type ScrapedProduct = Omit<
   | 'users'
   | 'watchers'
   | 'offers'
+  | 'highConfidenceOffers'
   | 'offersCheckedAt'
 >;
 
@@ -86,6 +88,7 @@ export type LiveProductUpdate = {
 };
 
 export type Offer = {
+  matchConfidence?: 'high-confidence';
   canonicalIdentity?: unknown;
   priceObservation?: unknown;
   exactEvidence?: unknown;

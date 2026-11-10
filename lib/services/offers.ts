@@ -10,6 +10,7 @@ import type { Offer } from '@/types';
 import ProductModel from '@/lib/models/product.model';
 import { findOffers } from '@/lib/scraper/compare';
 import { verifiedOffers } from '@/lib/verified-offers';
+import { highConfidenceOffers } from '@/lib/high-confidence-offers';
 import {
   verifyCandidateLinks,
   MAX_CANDIDATE_LINKS,
@@ -33,20 +34,32 @@ export async function updateOffers(id: string) {
     )
     .lean();
   if (!product) return [];
-  const automatic = await findOffers({
-    ...product,
-    image: product.image ?? undefined,
-    comparisonIdentityVerified: product.comparisonIdentityVerified ?? undefined,
-    brand: product.brand ?? undefined,
-    variant: product.variant ?? undefined,
-  });
+  let highConfidence: Offer[] = [];
+  const automatic = await findOffers(
+    {
+      ...product,
+      image: product.image ?? undefined,
+      comparisonIdentityVerified: product.comparisonIdentityVerified ?? undefined,
+      brand: product.brand ?? undefined,
+      variant: product.variant ?? undefined,
+    },
+    (offers) => {
+      highConfidence = offers;
+    },
+  );
   // Saved-product discovery is local/zero-API-cost, with an independent freshness gate.
   let saved: Offer[] = [];
   let links: ProductAssociation[] | undefined;
   try {
-    saved = await savedProductOffers(product, (result) => {
-      links = result;
-    });
+    saved = await savedProductOffers(
+      product,
+      (result) => {
+        links = result;
+      },
+      (offers) => {
+        highConfidence = [...offers, ...highConfidence];
+      },
+    );
   } catch {
     console.warn('[compare] Saved product lookup failed');
   }
@@ -55,7 +68,7 @@ export async function updateOffers(id: string) {
   // but only while their separate last-check timestamp is still fresh.
   const latest = await ProductModel.findById(id)
     .select(
-      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence canonicalIdentity priceObservation productLinks isOutOfStock offers candidateLinksCheckedAt',
+      'title currency store storeName url currentPrice image brand variant comparisonIdentityVerified exactEvidence canonicalIdentity priceObservation productLinks isOutOfStock offers highConfidenceOffers candidateLinksCheckedAt',
     )
     .lean();
   if (
@@ -75,6 +88,7 @@ export async function updateOffers(id: string) {
     // before passing them into our strict Offer matching functions.
     offers: (latest.offers ?? []).map((offer) => ({
       ...offer,
+      matchConfidence: offer.matchConfidence ?? undefined,
       savedTrackedProduct: offer.savedTrackedProduct ?? undefined,
       brand: offer.brand ?? undefined,
       variant: offer.variant ?? undefined,
@@ -90,6 +104,7 @@ export async function updateOffers(id: string) {
         .filter((offer) => offer.brand && offer.variant)
         .map((offer) => ({
           ...offer,
+          matchConfidence: offer.matchConfidence ?? undefined,
           savedTrackedProduct: offer.savedTrackedProduct ?? undefined,
           brand: offer.brand ?? undefined,
           variant: offer.variant ?? undefined,
@@ -99,6 +114,18 @@ export async function updateOffers(id: string) {
   const storedManual = verifiedOffers(source, earlier);
   // New automatic search wins over older manual prices for the same store.
   const offers = mergeVerifiedCandidateOffers(source, [...storedManual, ...discovered]);
+  const previousHighConfidence = (latest.highConfidenceOffers ?? []).map((o) => ({
+    ...o,
+    matchConfidence: o.matchConfidence ?? undefined,
+    savedTrackedProduct: o.savedTrackedProduct ?? undefined,
+    brand: o.brand ?? undefined,
+    variant: o.variant ?? undefined,
+    image: o.image ?? undefined,
+  }));
+  const retainedHighConfidence = highConfidenceOffers(
+    source,
+    retainOfferEvidence(previousHighConfidence, highConfidence),
+  ).filter((o) => !offers.some((strict) => strict.store === o.store));
   console.info('[compare] Offer merge', {
     stores: ['amazon', 'flipkart', 'myntra.com']
       .filter((store) => store !== source.store)
@@ -114,6 +141,7 @@ export async function updateOffers(id: string) {
     {
       $set: {
         offers: retainOfferEvidence(source.offers, offers),
+        highConfidenceOffers: retainedHighConfidence,
         offersCheckedAt: new Date(),
         ...(links ? { productLinks: validAssociations(source, links) } : {}),
       },
@@ -205,6 +233,7 @@ export async function verifyAndUpdateCandidateOffers(
       variant: latest.variant ?? undefined,
       offers: latest.offers.map((o) => ({
         ...o,
+        matchConfidence: o.matchConfidence ?? undefined,
         savedTrackedProduct: o.savedTrackedProduct ?? undefined,
         brand: o.brand ?? undefined,
         variant: o.variant ?? undefined,
@@ -221,6 +250,7 @@ export async function verifyAndUpdateCandidateOffers(
         offers: retainOfferEvidence(
           latest.offers.map((o) => ({
             ...o,
+            matchConfidence: o.matchConfidence ?? undefined,
             brand: o.brand ?? undefined,
             variant: o.variant ?? undefined,
             image: o.image ?? undefined,

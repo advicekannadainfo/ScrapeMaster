@@ -33,6 +33,7 @@ export function fragranceProductEvidenceMissing(
 }
 
 export type MatchIdentity = {
+  matchConfidence?: 'high-confidence';
   canonicalIdentity?: unknown;
   priceObservation?: unknown;
   url?: string;
@@ -151,6 +152,11 @@ type Source = MatchIdentity & {
 // Pair compatibility is not permission to display a fragrance price: callers
 // must use verifiedOffers for independent Product proof and observation freshness.
 export function isVerifiedProductMatch(source: MatchIdentity, candidate: MatchIdentity) {
+  if (
+    source.matchConfidence === 'high-confidence' ||
+    candidate.matchConfidence === 'high-confidence'
+  )
+    return false;
   const consistent = (identity: MatchIdentity) =>
     identity.exactEvidence == null || Boolean(recordExactEvidence(identity));
   if (!consistent(source) || !consistent(candidate)) return false;
@@ -215,6 +221,7 @@ export function verifiedOffers(
 ) {
   return candidates
     .filter((offer) => {
+      if (offer.matchConfidence === 'high-confidence') return false;
       if (
         !Number.isFinite(offer.price) ||
         offer.price <= 0 ||

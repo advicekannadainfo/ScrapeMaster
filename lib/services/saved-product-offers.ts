@@ -29,10 +29,12 @@ type Source = {
 export async function savedProductOffers(
   source: Source,
   onLinks?: (links: ProductAssociation[]) => void,
+  onHighConfidence?: (offers: Offer[]) => void,
 ): Promise<Offer[]> {
   if (source.title && independentFragrance(source.canonicalIdentity)) {
     const result = await fragranceProductLinks({ ...source, title: source.title });
     onLinks?.(result.links);
+    onHighConfidence?.(result.highConfidenceOffers);
     return result.offers;
   }
   const sourceGate = !sufficientExactEvidence(source.exactEvidence)

@@ -32,6 +32,12 @@ export const identitySchema = z.object({
     packageGtin: optionalFact,
   }),
   negated: z.array(z.string().max(30)).max(8),
+  // Advisory MAIN Product context for the separately labelled confidence tier.
+  // Strict selected facts and strict matching never derive equality from this.
+  context: z.preprocess(
+    (v) => (v === null ? undefined : v),
+    z.object({ formulation: optionalFact, risk: optionalFact }).optional(),
+  ),
   issues: z
     .array(
       z.enum([

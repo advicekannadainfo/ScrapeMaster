@@ -25,7 +25,7 @@ export default function CompareButton({ productId }: { productId: string }) {
               const result = await compareOffersNow(productId);
               if (result.ok) {
                 setMessage(
-                  `Store search completed (${result.data.count} offers including this store).`,
+                  `Store search completed (${result.data.count} verified offers including this store).`,
                 );
                 router.refresh();
               } else setMessage(result.error);

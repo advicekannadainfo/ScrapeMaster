@@ -1,5 +1,6 @@
 import { resolveSelectedVolume } from '../matching/selected-volume';
 import { mainFragranceIdentity } from '../matching/fragrance';
+import { mainFragranceContext } from '../matching/main-context';
 import { observeProduct } from '../matching/observations';
 import { mainEvidence } from '../exact-evidence';
 import { mainProductDescription } from '@/lib/product-presentation';
@@ -173,6 +174,7 @@ export function parseAmazonAPIProduct(body: string, input: string): ScrapedProdu
     selectedVolume: selectedVolumeEvidence.volume,
     volumeField: selectedVolumeEvidence.field ?? 'product_information.Item Volume',
     packageGtin: exactEvidence?.gtin,
+    context: mainFragranceContext('amazon', raw, exactEvidence),
     pack: (raw as { product_information: Record<string, unknown> }).product_information[
       'Number of Items'
     ],
@@ -653,6 +655,7 @@ export function parseFlipkartAPIProduct(body: string, input: string): ScrapedPro
       selectedVolume: selectedVolumeEvidence.volume,
       volumeField: selectedVolumeEvidence.field ?? 'specifications.General.Quantity',
       packageGtin: exactEvidence?.gtin,
+      context: mainFragranceContext('flipkart', raw, exactEvidence),
       pack: exactEvidence?.selected.pack?.value,
       packField: exactEvidence?.selected.pack?.field,
       declaration: exactEvidence?.selected.concentration?.value,
